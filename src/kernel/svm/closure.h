@@ -566,7 +566,10 @@ ccl_device
       const float height = stack_load(stack, bsdf_data.height);
       const float wavelength = stack_load(stack, bsdf_data.wavelength);
       const float dispersion = stack_load(stack, bsdf_data.dispersion);
-      bsdf_wave_diffraction_setup(sd, N, T, width, height, wavelength, dispersion, weight);
+      const float polarizer_angle = stack_load(stack, bsdf_data.polarizer_angle);
+      const float polarized_input = stack_load(stack, bsdf_data.polarized_input);
+      bsdf_wave_diffraction_setup(
+          sd, N, T, width, height, wavelength, dispersion, polarizer_angle, polarized_input, weight);
       break;
     }
     case CLOSURE_BSDF_TRANSPARENT_ID: {

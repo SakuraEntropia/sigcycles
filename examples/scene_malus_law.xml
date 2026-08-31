@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wave Diffraction BSDF -- Malus's law polarizer demo.
+
+  Emissive quad (light) -> analyzer (wave diffraction closure acting as a
+  linear polarizer at angle theta) -> camera. The analyzer's transmitted
+  intensity follows cos^2(theta) for linearly polarized input:
+  0 deg = bright, 90 deg = dark (crossed polarizers).
+-->
+<cycles>
+<camera width="400" height="300" />
+<transform translate="0 0 -3">
+	<camera type="perspective" />
+</transform>
+<background>
+	<background name="bg" strength="1.5" color="1 1 1" />
+	<connect from="bg background" to="output surface" />
+</background>
+
+<shader name="analyzer">
+	<wave_diffraction_bsdf name="analyzer_bsdf"
+	                       width="0.01" height="0.01" wavelength="550"
+	                       dispersion="0" polarizer_angle="0.4" polarized_input="1"
+	                       color="1 1 1" />
+	<connect from="analyzer_bsdf bsdf" to="output surface" />
+</shader>
+<state shader="analyzer">
+	<mesh P="-0.5 0.5 0  0.5 0.5 0  0.5 -0.5 0  -0.5 -0.5 0" nverts="4" verts="0 1 2 3" />
+</state>
+</cycles>

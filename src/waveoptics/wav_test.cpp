@@ -237,6 +237,8 @@ int main()
     b.height = 0.002f;
     b.wavelength = 550.0f;
     b.dispersion = 1.0f;
+    b.polarizer_angle = -1.0f;
+    b.polarized_input = 0.0f;
 
     const float3 wi = make_float3(0, 0, 1);
     float pdf = 0.0f;
@@ -273,6 +275,52 @@ int main()
     const Spectrum sm = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
     check("mono: flat spectrum", fabsf(sm.x - sm.y) < 1e-6f && fabsf(sm.y - sm.z) < 1e-6f);
     check("mono: pdf = value", fabsf(pdf - sm.x) < 1e-6f);
+  }
+
+  /* Polarizer: Malus's law. Linearly polarized input through a linear
+   * polarizer at angle theta -> cos^2(theta); unpolarized -> 0.5. */
+  {
+    WaveDiffractionBsdf b;
+    b.N = make_float3(0, 0, 1);
+    b.T = make_float3(0, 1, 0);
+    b.width = 0.0001f;
+    b.height = 0.002f;
+    b.wavelength = 550.0f;
+    b.dispersion = 0.0f;
+    b.polarized_input = 1.0f;
+
+    const float3 wi = make_float3(0, 0, 1);
+    const float3 wo = make_float3(0, 0, -1); /* straight through */
+    float pdf = 0.0f;
+
+    /* Baseline (no polarizer): full transmission. */
+    b.polarizer_angle = -1.0f; /* disabled */
+    const Spectrum s0 = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+
+    /* Theta = 0: cos^2(0) = 1 -> same as baseline. */
+    b.polarizer_angle = 0.0f;
+    const Spectrum s0d = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    check("malus: theta=0 full transmission", fabsf(s0d.x - s0.x) < 1e-5f);
+
+    /* Theta = pi/4: cos^2(pi/4) = 0.5. */
+    b.polarizer_angle = 0.25f * WAV_PI_F;
+    const Spectrum s45 = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    check("malus: theta=45deg half transmission",
+          fabsf(s45.x - 0.5f * s0.x) < 1e-4f);
+
+    /* Theta = pi/2: cos^2(pi/2) = 0 (crossed polarizers). */
+    b.polarizer_angle = 0.5f * WAV_PI_F;
+    const Spectrum s90 = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    check("malus: theta=90deg zero transmission", fabsf(s90.x) < 1e-5f);
+
+    /* Unpolarized input: 0.5 regardless of angle. */
+    b.polarized_input = 0.0f;
+    b.polarizer_angle = 0.0f;
+    const Spectrum su0 = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    b.polarizer_angle = 0.25f * WAV_PI_F;
+    const Spectrum su45 = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    check("malus: unpolarized -> 0.5", fabsf(su0.x - 0.5f * s0.x) < 1e-5f);
+    check("malus: unpolarized angle-independent", fabsf(su0.x - su45.x) < 1e-6f);
   }
 
   if (failures == 0) {

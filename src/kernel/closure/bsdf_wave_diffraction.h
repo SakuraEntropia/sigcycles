@@ -37,11 +37,13 @@ using namespace waveoptics;
 
 struct WaveDiffractionBsdf {
   SHADER_CLOSURE_BASE;
-  float3 T;         /* tangent on the surface (slit axis) */
-  float width;      /* slit width, scene units (meters) */
-  float height;     /* slit height, scene units (meters) */
-  float wavelength; /* wavelength, nanometers (mono mode) */
-  float dispersion; /* three-band dispersion: 0 = mono, 1 = RGB primaries */
+  float3 T;            /* tangent on the surface (slit axis) */
+  float width;         /* slit width, scene units (meters) */
+  float height;        /* slit height, scene units (meters) */
+  float wavelength;    /* wavelength, nanometers (mono mode) */
+  float dispersion;    /* three-band dispersion: 0 = mono, 1 = RGB primaries */
+  float polarizer_angle; /* linear polarizer angle (radians); 0 = no polarizer */
+  float polarized_input; /* 1 = input linearly polarized along the tangent axis */
 };
 
 static_assert(sizeof(ShaderClosure) >= sizeof(WaveDiffractionBsdf),
@@ -163,6 +165,8 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
                                                    const float height,
                                                    const float wavelength,
                                                    const float dispersion,
+                                                   const float polarizer_angle,
+                                                   const float polarized_input,
                                                    const Spectrum weight)
 {
   ccl_private WaveDiffractionBsdf *bsdf = (ccl_private WaveDiffractionBsdf *)bsdf_alloc(
@@ -174,6 +178,8 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
     bsdf->height = fmaxf(height, 0.0f);
     bsdf->wavelength = fmaxf(wavelength, 0.0f);
     bsdf->dispersion = dispersion > 0.0f ? 1.0f : 0.0f;
+    bsdf->polarizer_angle = polarizer_angle;
+    bsdf->polarized_input = polarized_input > 0.0f ? 1.0f : 0.0f;
     bsdf->type = CLOSURE_BSDF_WAVE_DIFFRACTION_ID;
     sd->runtime_flag |= (SR_BSDF | SR_BSDF_HAS_EVAL | SR_BSDF_HAS_TRANSMISSION);
   }
@@ -238,6 +244,24 @@ ccl_device_inline float wave_diffraction_sampling_wavelength(
   return (bsdf->dispersion > 0.0f) ? wav_spectrum_primary_green : bsdf->wavelength;
 }
 
+/* Mueller transmission factor of an ideal linear polarizer at angle theta.
+ * Input: unpolarized S=(1,0,0,0) or linearly polarized along the tangent
+ * axis S=(1,1,0,0). For polarized input this is Malus's law:
+ * S0_out = cos^2(theta). Unpolarized input passes half the power. */
+ccl_device_inline float wave_polarizer_transmission(const ccl_private WaveDiffractionBsdf *bsdf)
+{
+  /* polarizer_angle < 0 disables the polarizer. */
+  const float theta = bsdf->polarizer_angle;
+  if (theta < 0.0f) {
+    return 1.0f;
+  }
+  if (bsdf->polarized_input > 0.0f) {
+    const float c = cosf(2.0f * theta);
+    return 0.5f * (1.0f + c); /* cos^2(theta) */
+  }
+  return 0.5f;
+}
+
 /* Evaluates the diffraction pattern and returns the spectrum.
  * Mono mode: single wavelength -> flat spectrum.
  * Dispersion mode: three-band evaluation at the sRGB primaries; the R/G/B
@@ -251,6 +275,9 @@ ccl_device_inline Spectrum wave_diffraction_eval_spectrum(
     const float3 wo,
     ccl_private float *pdf)
 {
+  const float pol = wave_polarizer_transmission(bsdf);
+
+  Spectrum result;
   if (bsdf->dispersion > 0.0f) {
     float p[3];
     float wavelengths[3];
@@ -259,11 +286,14 @@ ccl_device_inline Spectrum wave_diffraction_eval_spectrum(
       p[i] = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, wavelengths[i]);
     }
     *pdf = p[1]; /* green band drives sampling */
-    return make_float3(p[0], p[1], p[2]);
+    result = make_float3(p[0], p[1], p[2]);
   }
-  const float p = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, bsdf->wavelength);
-  *pdf = p;
-  return make_spectrum(p);
+  else {
+    const float p = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, bsdf->wavelength);
+    *pdf = p;
+    result = make_spectrum(p);
+  }
+  return make_float3(result.x * pol, result.y * pol, result.z * pol);
 }
 
 ccl_device Spectrum bsdf_wave_diffraction_eval(const ccl_private ShaderClosure *sc,
