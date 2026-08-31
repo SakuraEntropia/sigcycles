@@ -51,6 +51,9 @@ ccl_device_inline int svm_node_closure_bsdf_skip(int offset, const uint type)
     case CLOSURE_BSDF_TRANSPARENT_ID:
       offset += sizeof(SVMNodeSimpleBsdfData) / sizeof(uint);
       break;
+    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
+      offset += sizeof(SVMNodeWaveDiffractionBsdfData) / sizeof(uint);
+      break;
     case CLOSURE_BSDF_RAY_PORTAL_ID:
       offset += sizeof(SVMNodeRayPortalBsdfData) / sizeof(uint);
       break;
@@ -549,6 +552,20 @@ ccl_device
       /* FIXME(weizhen): `maybe_ensure_valid_specular_reflection` should only be applied to glossy
        * closures, applying to translucent closure seems to be a mistake. */
       bsdf_translucent_setup(sd, maybe_ensure_valid_specular_reflection(sd, N), weight);
+      break;
+    }
+    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID: {
+      const ccl_global SVMNodeWaveDiffractionBsdfData &bsdf_data =
+          svm_node_get<SVMNodeWaveDiffractionBsdfData>(kg, &offset);
+      float3 N = stack_load_float3_default(stack, bsdf_data.normal_offset, sd->N);
+      N = safe_normalize_fallback(N, sd->N);
+      const float3 T = stack_load_float3_default(stack, bsdf_data.tangent_offset, sd->dPdu);
+
+      const Spectrum weight = closure_weight * mix_weight;
+      const float width = stack_load(stack, bsdf_data.width);
+      const float height = stack_load(stack, bsdf_data.height);
+      const float wavelength = stack_load(stack, bsdf_data.wavelength);
+      bsdf_wave_diffraction_setup(sd, N, T, width, height, wavelength, weight);
       break;
     }
     case CLOSURE_BSDF_TRANSPARENT_ID: {

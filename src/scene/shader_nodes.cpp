@@ -2623,6 +2623,44 @@ void DiffuseBsdfNode::compile(OSLCompiler &compiler)
   compiler.add(this, "node_diffuse_bsdf");
 }
 
+/* Wave Diffraction BSDF */
+NODE_DEFINE(WaveDiffractionBsdfNode)
+{
+  NodeType *type = NodeType::add("wave_diffraction_bsdf", create, NodeType::SHADER);
+
+  SOCKET_IN_COLOR(color, "Color", make_float3(1.0f, 1.0f, 1.0f));
+  SOCKET_IN_NORMAL(normal, "Normal", zero_float3(), SocketType::LINK_NORMAL);
+  SOCKET_IN_FLOAT(surface_mix_weight, "SurfaceMixWeight", 0.0f, SocketType::SVM_INTERNAL);
+  SOCKET_IN_FLOAT(width, "Width", 0.0002f);
+  SOCKET_IN_FLOAT(height, "Height", 0.001f);
+  SOCKET_IN_FLOAT(wavelength, "Wavelength", 550.0f);
+  SOCKET_IN_VECTOR(tangent, "Tangent", make_float3(1.0f, 0.0f, 0.0f));
+
+  SOCKET_OUT_CLOSURE(BSDF, "BSDF");
+
+  return type;
+}
+
+WaveDiffractionBsdfNode::WaveDiffractionBsdfNode() : BsdfNode(get_node_type())
+{
+  closure = CLOSURE_BSDF_WAVE_DIFFRACTION_ID;
+}
+
+void WaveDiffractionBsdfNode::compile(SVMCompiler &compiler)
+{
+  BsdfNode::compile(compiler,
+                    SVMNodeWaveDiffractionBsdfData{.width = compiler.input_float("Width"),
+                                                   .height = compiler.input_float("Height"),
+                                                   .wavelength = compiler.input_float("Wavelength"),
+                                                   .normal_offset = compiler.input_link("Normal"),
+                                                   .tangent_offset = compiler.input_link("Tangent")});
+}
+
+void WaveDiffractionBsdfNode::compile(OSLCompiler &compiler)
+{
+  compiler.add(this, "node_wave_diffraction_bsdf");
+}
+
 /* Disney principled BSDF Closure */
 NODE_DEFINE(PrincipledBsdfNode)
 {

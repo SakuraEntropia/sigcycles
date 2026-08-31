@@ -604,6 +604,18 @@ class TranslucentBsdfNode : public BsdfNode {
   SHADER_NODE_CLASS(TranslucentBsdfNode)
 };
 
+/* Wave Diffraction BSDF: Fraunhofer free-space diffraction of a rectangular
+ * slit aperture (ported from wave_tracer). */
+class WaveDiffractionBsdfNode : public BsdfNode {
+ public:
+  SHADER_NODE_CLASS(WaveDiffractionBsdfNode)
+
+  NODE_SOCKET_API(float, width)
+  NODE_SOCKET_API(float, height)
+  NODE_SOCKET_API(float, wavelength)
+  NODE_SOCKET_API(float3, tangent)
+};
+
 class TransparentBsdfNode : public BsdfNode {
  public:
   SHADER_NODE_CLASS(TransparentBsdfNode)

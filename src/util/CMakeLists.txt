@@ -11,6 +11,7 @@ set(INC_SYS
 
 set(SRC
   aligned_malloc.cpp
+  ../waveoptics/wav_fsd_tables.cpp
   colorspace.cpp
   debug.cpp
   guarded_allocator.cpp

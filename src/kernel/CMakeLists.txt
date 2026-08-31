@@ -35,6 +35,7 @@ set(SRC_KERNEL_CLOSURE_HEADERS
   closure/bsdf_toon.h
   closure/bsdf_transparent.h
   closure/bsdf_util.h
+  closure/bsdf_wave_diffraction.h
   closure/bsdf_ashikhmin_shirley.h
   closure/bsdf_hair.h
   closure/bssrdf.h
@@ -258,6 +259,19 @@ set(SRC_KERNEL_TYPES_HEADERS
   types.h
 )
 
+set(SRC_WAVEOPTICS_HEADERS
+  ../waveoptics/wav_cerf.h
+  ../waveoptics/wav_complex.h
+  ../waveoptics/wav_fresnel.h
+  ../waveoptics/wav_fsd.h
+  ../waveoptics/wav_fsd_sampler.h
+  ../waveoptics/wav_fsd_tables.h
+  ../waveoptics/wav_gaussian.h
+  ../waveoptics/wav_math.h
+  ../waveoptics/wav_stokes.h
+  ../waveoptics/wav_utd.h
+)
+
 set(SRC_KERNEL_HEADERS
   ${SRC_KERNEL_BAKE_HEADERS}
   ${SRC_KERNEL_BVH_HEADERS}
@@ -385,11 +399,13 @@ source_group("osl" FILES ${SRC_KERNEL_OSL_HEADERS})
 source_group("sample" FILES ${SRC_KERNEL_SAMPLE_HEADERS})
 source_group("svm" FILES ${SRC_KERNEL_SVM_HEADERS})
 source_group("util" FILES ${SRC_KERNEL_UTIL_HEADERS})
+source_group("waveoptics" FILES ${SRC_WAVEOPTICS_HEADERS})
 
 # -----------------------------------------------------------------------------
 # Install kernel source for runtime compilation.
 
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_KERNEL_BAKE_HEADERS}" ${CYCLES_INSTALL_PATH}/source/kernel/bake)
+delayed_install(${CMAKE_CURRENT_SOURCE_DIR}/../waveoptics "${SRC_WAVEOPTICS_HEADERS}" ${CYCLES_INSTALL_PATH}/source/waveoptics)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_KERNEL_BVH_HEADERS}" ${CYCLES_INSTALL_PATH}/source/kernel/bvh)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_KERNEL_CAMERA_HEADERS}" ${CYCLES_INSTALL_PATH}/source/kernel/camera)
 delayed_install(${CMAKE_CURRENT_SOURCE_DIR} "${SRC_KERNEL_CLOSURE_HEADERS}" ${CYCLES_INSTALL_PATH}/source/kernel/closure)

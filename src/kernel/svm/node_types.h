@@ -1031,6 +1031,18 @@ struct SVMNodeDiffuseBsdfData {
 static_assert(alignof(SVMNodeDiffuseBsdfData) <= alignof(uint));
 static_assert(sizeof(SVMNodeDiffuseBsdfData) % sizeof(uint) == 0);
 
+/* Wave Diffraction BSDF. */
+struct SVMNodeWaveDiffractionBsdfData {
+  SVMInputFloat width;
+  SVMInputFloat height;
+  SVMInputFloat wavelength;
+  SVMStackOffset normal_offset;
+  SVMStackOffset tangent_offset;
+  uint8_t _pad[6];
+};
+static_assert(alignof(SVMNodeWaveDiffractionBsdfData) <= alignof(uint));
+static_assert(sizeof(SVMNodeWaveDiffractionBsdfData) % sizeof(uint) == 0);
+
 /* Toon BSDF. */
 struct SVMNodeToonBsdfData {
   SVMInputFloat size;
