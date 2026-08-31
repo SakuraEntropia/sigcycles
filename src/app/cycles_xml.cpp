@@ -672,7 +672,27 @@ static void xml_read_light(XMLReadState &state, const xml_node node)
 
   /* Create object. */
   Object *object = scene->create_node<Object>();
-  object->set_tfm(state.tfm);
+  Transform object_tfm = state.tfm;
+
+  /* The light node's own "tfm" attribute (e.g. "1 0 0 4 0 1 0 0 0 0 1 4")
+   * positions/orients the light geometry, like a wrapping <transform>.
+   * Convention: row-major 3x4 (12 values) or 4x4 (16 values),
+   * translation in the 4th column. */
+  if (node.attribute("tfm")) {
+    vector<float> matrix;
+    if (xml_read_float_array(matrix, node, "tfm") &&
+        (matrix.size() == 12 || matrix.size() == 16))
+    {
+      const float *m = matrix.data();
+      Transform tfm = transform_identity();
+      tfm.x = make_float4(m[0], m[4], m[8], m[3]);
+      tfm.y = make_float4(m[1], m[5], m[9], m[7]);
+      tfm.z = make_float4(m[2], m[6], m[10], m[11]);
+      object_tfm = object_tfm * tfm;
+    }
+  }
+
+  object->set_tfm(object_tfm);
   object->set_visibility(PATH_RAY_VISIBILITY_ALL & ~PATH_RAY_VISIBILITY_CAMERA);
   object->set_geometry(light);
 
