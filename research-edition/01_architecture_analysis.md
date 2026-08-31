@@ -48,7 +48,7 @@ src/
 ## 4. 光源采样（kernel/light/）
 - `tree.h`：**光树**（分层光源聚类 + 光链接）；`distribution.h`：光源 CDF；`sample.h`：NEE 入口；`background.h`：环境光采样（含 equirect）；`area/point/spot/sun/triangle.h`：各光源类型。
 - 宿主侧：`src/scene/light.h/.cpp`、`src/scene/light_tree.cpp`。
-- ⚠️ 已知环境问题（实测，与本项目无关）：**独立构建中 lamp 类光源（point/area/sun/spot）渲染为黑**（仓库自带 caustics 示例同样黑），背景/天空光正常；`environment_texture` 图像有色彩空间 bug（品红）。研究特性若依赖 lamp 需先修。
+- ✅ 已修复（本次）：独立构建中 lamp 类光源（point/area/sun/spot）全黑——根因是 XML 解析忽略 `<light tfm>` 属性导致光源都在原点；已在 `src/app/cycles_xml.cpp` 修复（见 commit dde0911f7）。已知残留：`environment_texture` 图像有色彩空间 bug（品红）。
 
 ## 5. 去噪与 pass 系统
 - `kernel/types.h` `enum PassType`：完整 pass 集（EMISSION/BACKGROUND/AO/DIFFUSE*/GLOSSY*/TRANSMISSION*/VOLUME*/POSITION/NORMAL/ROUGHNESS/UV/OBJECT_ID/MATERIAL_ID/MOTION/CRYPTOMATTE/AOV_*/ADAPTIVE_AUX/SAMPLE_COUNT/DENOISING_*）。

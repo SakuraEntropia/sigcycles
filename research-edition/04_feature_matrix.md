@@ -25,6 +25,6 @@
 
 ## 附录：已确认的环境问题（影响特性选型）
 
-1. **lamp 光源在独立构建渲染为黑**（point/area/sun/spot；仓库自带 caustics 示例同样黑）——实时/离线 lamp 依赖特性（ReSTIR 等）需先修复。
+1. ✅ 已修复：lamp 光源全黑根因 = XML 忽略 light tfm 属性（光源在原点）→ commit dde0911f7；ReSTIR 等 lamp 依赖特性现在可用。
 2. **environment_texture 色彩空间 bug**（品红）——环境贴图类特性受影响。
 3. 两者均为预先存在（原始未改动构建同样复现），非本项目引入。
