@@ -620,6 +620,17 @@ class WaveDiffractionBsdfNode : public BsdfNode {
   NODE_SOCKET_API(float3, tangent)
 };
 
+
+/* Wave Thin-Film BSDF: single dielectric film interference (iridescence). */
+class WaveThinFilmBsdfNode : public BsdfNode {
+ public:
+  SHADER_NODE_CLASS(WaveThinFilmBsdfNode)
+
+  NODE_SOCKET_API(float, n0)
+  NODE_SOCKET_API(float, n1)
+  NODE_SOCKET_API(float, n2)
+  NODE_SOCKET_API(float, thickness)
+};
 class TransparentBsdfNode : public BsdfNode {
  public:
   SHADER_NODE_CLASS(TransparentBsdfNode)

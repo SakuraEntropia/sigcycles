@@ -21,6 +21,7 @@
 #include "kernel/closure/bsdf_principled_hair_chiang.h"
 #include "kernel/closure/bsdf_principled_hair_huang.h"
 #include "kernel/closure/bsdf_wave_diffraction.h"
+#include "kernel/closure/bsdf_wave_thin_film.h"
 // clang-format on
 
 CCL_NAMESPACE_BEGIN
@@ -222,6 +223,11 @@ ccl_device_inline int bsdf_sample(KernelGlobals kg,
       *sampled_roughness = one_float2();
       *eta = 1.0f;
       break;
+    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
+      label = bsdf_wave_thin_film_sample(sc, Ng, sd->wi, rand_xy, eval, wo, pdf);
+      *sampled_roughness = one_float2();
+      *eta = 1.0f;
+      break;
     case CLOSURE_BSDF_TRANSPARENT_ID:
       label = bsdf_transparent_sample(sc, Ng, sd->wi, eval, wo, pdf);
       *sampled_roughness = zero_float2();
@@ -364,6 +370,7 @@ ccl_device_inline void bsdf_roughness_eta(const ccl_private ShaderClosure *sc,
 #  endif
     case CLOSURE_BSDF_TRANSLUCENT_ID:
     case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
+    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
       *roughness = one_float2();
       *eta = 1.0f;
       break;
@@ -472,6 +479,9 @@ ccl_device_inline int bsdf_label(const KernelGlobals kg,
     case CLOSURE_BSDF_ROUGH_TRANSLUCENT_ID:
     case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
       label = LABEL_TRANSMIT | LABEL_DIFFUSE;
+      break;
+    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
+      label = LABEL_REFLECT | LABEL_DIFFUSE;
       break;
     case CLOSURE_BSDF_TRANSPARENT_ID:
       label = LABEL_TRANSMIT | LABEL_TRANSPARENT;
@@ -593,6 +603,9 @@ ccl_device_inline
       break;
     case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
       eval = bsdf_wave_diffraction_eval(sc, sd->wi, wo, pdf);
+      break;
+    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
+      eval = bsdf_wave_thin_film_eval(sc, sd->wi, wo, pdf);
       break;
     case CLOSURE_BSDF_TRANSPARENT_ID:
       eval = bsdf_transparent_eval(sc, sd->wi, wo, pdf);

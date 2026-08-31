@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wave Thin-Film BSDF -- iridescence demo.
+
+  Three vertical panels with different film thicknesses (60/120/200 nm,
+  film index 1.5) on a high-index substrate (2.0), lit by white sky.
+  The wavelength-dependent Airy reflectance shifts the interference colour
+  with thickness: ~red for 60 nm, ~orange/red for 120 nm, ~green for
+  200 nm (see the design wavelength 4*n1*d).
+-->
+<cycles>
+<camera width="1024" height="512" />
+<transform translate="0 0 2.5" rotate="180 1 0 0">
+	<camera type="perspective" fov="50" />
+</transform>
+<background>
+	<background name="bg" strength="2.0" color="1 1 1" />
+	<connect from="bg background" to="output surface" />
+</background>
+<shader name="film60">
+	<wave_thin_film_bsdf name="f60" n0="1.0" n1="1.5" n2="2.0" thickness="60e-9" color="1 1 1" />
+	<connect from="f60 bsdf" to="output surface" />
+</shader>
+<shader name="film120">
+	<wave_thin_film_bsdf name="f120" n0="1.0" n1="1.5" n2="2.0" thickness="120e-9" color="1 1 1" />
+	<connect from="f120 bsdf" to="output surface" />
+</shader>
+<shader name="film200">
+	<wave_thin_film_bsdf name="f200" n0="1.0" n1="1.5" n2="2.0" thickness="200e-9" color="1 1 1" />
+	<connect from="f200 bsdf" to="output surface" />
+</shader>
+<state shader="film60">
+	<mesh P="-0.6 0.8 0  -0.2 0.8 0  -0.2 -0.8 0  -0.6 -0.8 0" nverts="4" verts="0 1 2 3" />
+</state>
+<state shader="film120">
+	<mesh P="-0.2 0.8 0  0.2 0.8 0  0.2 -0.8 0  -0.2 -0.8 0" nverts="4" verts="0 1 2 3" />
+</state>
+<state shader="film200">
+	<mesh P="0.2 0.8 0  0.6 0.8 0  0.6 -0.8 0  0.2 -0.8 0" nverts="4" verts="0 1 2 3" />
+</state>
+</cycles>

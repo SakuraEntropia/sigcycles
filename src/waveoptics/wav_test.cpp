@@ -9,6 +9,7 @@
 #include "waveoptics/wav_fresnel.h"
 #include "waveoptics/wav_gaussian.h"
 #include "waveoptics/wav_stokes.h"
+#include "waveoptics/wav_thin_film.h"
 #include "waveoptics/wav_utd.h"
 #include "kernel/closure/bsdf_wave_diffraction.h"
 
@@ -421,6 +422,29 @@ int main()
     check("double slit: more minima than single slit", minima_double > minima_single);
     std::cout << "  double-slit minima=" << minima_double << " first at xi_x=" << first_min_xi
               << " | single-slit minima=" << minima_single << std::endl;
+  }
+
+  /* Thin-film interference: quarter-wave design wavelength peaks, and an
+   * AR coating (n1 = sqrt(n0*n2)) anti-reflects at the design wavelength. */
+  {
+    const float n0 = 1.0f, n1 = 1.5f, n2 = 1.0f;
+    const float d = 100e-9f;
+    const float cosi = 1.0f;
+
+    const float lambda_qw = 4.0f * n1 * d;
+    const float R_peak = wav_thin_film_reflectance_unpolarized(n0, n1, n2, d, lambda_qw, cosi);
+    const float lambda_off = lambda_qw * 1.5f;
+    const float R_off = wav_thin_film_reflectance_unpolarized(n0, n1, n2, d, lambda_off, cosi);
+
+    check("thin film: reflectance in [0,1]", R_peak >= 0.0f && R_peak <= 1.0f);
+    check("thin film: design wavelength extremal", fabsf(R_peak - R_off) > 0.01f);
+    std::cout << "  thin film R(qw)=" << R_peak << " R(off)=" << R_off << std::endl;
+
+    const float n1_ar = sqrtf(n0 * n2);
+    const float d_ar = lambda_qw / (4.0f * n1_ar);
+    const float R_ar = wav_thin_film_reflectance_unpolarized(n0, n1_ar, n2, d_ar, lambda_qw, cosi);
+    check("thin film: AR coating ~zero reflectance", R_ar < 0.01f);
+    std::cout << "  thin film AR R=" << R_ar << std::endl;
   }
 
   if (failures == 0) {

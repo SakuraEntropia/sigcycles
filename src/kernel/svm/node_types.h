@@ -1047,6 +1047,18 @@ struct SVMNodeWaveDiffractionBsdfData {
 static_assert(alignof(SVMNodeWaveDiffractionBsdfData) <= alignof(uint));
 static_assert(sizeof(SVMNodeWaveDiffractionBsdfData) % sizeof(uint) == 0);
 
+struct SVMNodeWaveThinFilmBsdfData {
+  SVMInputFloat n0;
+  SVMInputFloat n1;
+  SVMInputFloat n2;
+  SVMInputFloat thickness;
+  SVMStackOffset normal_offset;
+  uint8_t _pad[3];
+};
+static_assert(alignof(SVMNodeWaveThinFilmBsdfData) <= alignof(uint));
+static_assert(sizeof(SVMNodeWaveThinFilmBsdfData) % sizeof(uint) == 0);
+
+
 /* Toon BSDF. */
 struct SVMNodeToonBsdfData {
   SVMInputFloat size;

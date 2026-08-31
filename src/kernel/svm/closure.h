@@ -582,6 +582,20 @@ ccl_device
                                   weight);
       break;
     }
+    case CLOSURE_BSDF_WAVE_THIN_FILM_ID: {
+      const ccl_global SVMNodeWaveThinFilmBsdfData &bsdf_data =
+          svm_node_get<SVMNodeWaveThinFilmBsdfData>(kg, &offset);
+      float3 N = stack_load_float3_default(stack, bsdf_data.normal_offset, sd->N);
+      N = safe_normalize_fallback(N, sd->N);
+
+      const Spectrum weight = closure_weight * mix_weight;
+      const float n0 = stack_load(stack, bsdf_data.n0);
+      const float n1 = stack_load(stack, bsdf_data.n1);
+      const float n2 = stack_load(stack, bsdf_data.n2);
+      const float thickness = stack_load(stack, bsdf_data.thickness);
+      bsdf_wave_thin_film_setup(sd, N, n0, n1, n2, thickness, weight);
+      break;
+    }
     case CLOSURE_BSDF_TRANSPARENT_ID: {
       svm_node_get<SVMNodeSimpleBsdfData>(kg, &offset);
       const Spectrum weight = closure_weight * mix_weight;

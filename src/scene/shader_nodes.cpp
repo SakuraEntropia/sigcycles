@@ -2669,6 +2669,46 @@ void WaveDiffractionBsdfNode::compile(OSLCompiler &compiler)
   compiler.add(this, "node_wave_diffraction_bsdf");
 }
 
+/* Wave Thin-Film BSDF */
+
+NODE_DEFINE(WaveThinFilmBsdfNode)
+{
+  NodeType *type = NodeType::add("wave_thin_film_bsdf", create, NodeType::SHADER);
+
+  SOCKET_IN_COLOR(color, "Color", make_float3(1.0f, 1.0f, 1.0f));
+  SOCKET_IN_NORMAL(normal, "Normal", zero_float3(), SocketType::LINK_NORMAL);
+  SOCKET_IN_FLOAT(surface_mix_weight, "SurfaceMixWeight", 0.0f, SocketType::SVM_INTERNAL);
+  SOCKET_IN_FLOAT(n0, "Ambient Index", 1.0f);
+  SOCKET_IN_FLOAT(n1, "Film Index", 1.5f);
+  SOCKET_IN_FLOAT(n2, "Substrate Index", 1.0f);
+  SOCKET_IN_FLOAT(thickness, "Film Thickness", 100e-9f);
+
+  SOCKET_OUT_CLOSURE(BSDF, "BSDF");
+
+  return type;
+}
+
+WaveThinFilmBsdfNode::WaveThinFilmBsdfNode() : BsdfNode(get_node_type())
+{
+  closure = CLOSURE_BSDF_WAVE_THIN_FILM_ID;
+}
+
+void WaveThinFilmBsdfNode::compile(SVMCompiler &compiler)
+{
+  BsdfNode::compile(compiler,
+                    SVMNodeWaveThinFilmBsdfData{.n0 = compiler.input_float("Ambient Index"),
+                                                .n1 = compiler.input_float("Film Index"),
+                                                .n2 = compiler.input_float("Substrate Index"),
+                                                .thickness = compiler.input_float("Film Thickness"),
+                                                .normal_offset = compiler.input_link("Normal")});
+}
+
+void WaveThinFilmBsdfNode::compile(OSLCompiler &compiler)
+{
+  compiler.add(this, "node_wave_thin_film_bsdf");
+}
+
+
 /* Disney principled BSDF Closure */
 NODE_DEFINE(PrincipledBsdfNode)
 {
