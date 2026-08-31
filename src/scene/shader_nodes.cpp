@@ -2637,6 +2637,7 @@ NODE_DEFINE(WaveDiffractionBsdfNode)
   SOCKET_IN_FLOAT(dispersion, "Dispersion", 0.0f);
   SOCKET_IN_FLOAT(polarizer_angle, "Polarizer Angle", 0.0f);
   SOCKET_IN_FLOAT(polarized_input, "Polarized Input", 0.0f);
+  SOCKET_IN_FLOAT(slit_separation, "Slit Separation", 0.0f);
   SOCKET_IN_VECTOR(tangent, "Tangent", make_float3(1.0f, 0.0f, 0.0f));
 
   SOCKET_OUT_CLOSURE(BSDF, "BSDF");
@@ -2658,6 +2659,7 @@ void WaveDiffractionBsdfNode::compile(SVMCompiler &compiler)
                                                    .dispersion = compiler.input_float("Dispersion"),
                                                    .polarizer_angle = compiler.input_float("Polarizer Angle"),
                                                    .polarized_input = compiler.input_float("Polarized Input"),
+                                                   .slit_separation = compiler.input_float("Slit Separation"),
                                                    .normal_offset = compiler.input_link("Normal"),
                                                    .tangent_offset = compiler.input_link("Tangent")});
 }

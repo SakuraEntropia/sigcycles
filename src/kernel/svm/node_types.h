@@ -1039,6 +1039,7 @@ struct SVMNodeWaveDiffractionBsdfData {
   SVMInputFloat dispersion;
   SVMInputFloat polarizer_angle;
   SVMInputFloat polarized_input;
+  SVMInputFloat slit_separation;
   SVMStackOffset normal_offset;
   SVMStackOffset tangent_offset;
   uint8_t _pad[2];

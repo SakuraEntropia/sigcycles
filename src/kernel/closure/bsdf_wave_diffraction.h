@@ -44,6 +44,7 @@ struct WaveDiffractionBsdf {
   float dispersion;    /* three-band dispersion: 0 = mono, 1 = RGB primaries */
   float polarizer_angle; /* linear polarizer angle (radians); 0 = no polarizer */
   float polarized_input; /* 1 = input linearly polarized along the tangent axis */
+  float slit_separation; /* double-slit center distance (meters); 0 = single slit */
 };
 
 static_assert(sizeof(ShaderClosure) >= sizeof(WaveDiffractionBsdf),
@@ -60,26 +61,50 @@ ccl_device_inline float wave_fsd_unit()
  * the FSD mathematics. The edges are parallel to the tangent direction. */
 ccl_device_inline int wave_aperture_build(const float width,
                                           const float height,
+                                          const float separation,
                                           ccl_private wav_fsd_edge *edges)
 {
   const float fsd_unit = wave_fsd_unit();
   const float w_mm = width / fsd_unit;
   const float h_mm = fmaxf(height, 0.0f) / fsd_unit;
+  const float s_mm = separation / fsd_unit;
 
   if (w_mm <= 0.0f || h_mm <= 0.0f)
     return 0;
 
+  const float half_w = w_mm * 0.5f;
+
+  if (s_mm <= 0.0f) {
+    edges[0].e = make_float2(0.0f, h_mm);
+    edges[0].v = make_float2(-half_w, 0.0f);
+    edges[0].a_b = wav_make_complex(0.0f, 0.0f);
+    edges[0].iab_2 = wav_make_complex(0.0f, 1.0f);
+    edges[1].e = make_float2(0.0f, -h_mm);
+    edges[1].v = make_float2(half_w, 0.0f);
+    edges[1].a_b = wav_make_complex(0.0f, 0.0f);
+    edges[1].iab_2 = wav_make_complex(0.0f, 1.0f);
+    return 2;
+  }
+
+  /* Double slit: slits centred at +/-s/2. */
+  const float half_s = s_mm * 0.5f;
   edges[0].e = make_float2(0.0f, h_mm);
-  edges[0].v = make_float2(-w_mm * 0.5f, 0.0f);
+  edges[0].v = make_float2(-half_s - half_w, 0.0f);
   edges[0].a_b = wav_make_complex(0.0f, 0.0f);
   edges[0].iab_2 = wav_make_complex(0.0f, 1.0f);
-
   edges[1].e = make_float2(0.0f, -h_mm);
-  edges[1].v = make_float2(w_mm * 0.5f, 0.0f);
+  edges[1].v = make_float2(-half_s + half_w, 0.0f);
   edges[1].a_b = wav_make_complex(0.0f, 0.0f);
   edges[1].iab_2 = wav_make_complex(0.0f, 1.0f);
-
-  return 2;
+  edges[2].e = make_float2(0.0f, h_mm);
+  edges[2].v = make_float2(half_s - half_w, 0.0f);
+  edges[2].a_b = wav_make_complex(0.0f, 0.0f);
+  edges[2].iab_2 = wav_make_complex(0.0f, 1.0f);
+  edges[3].e = make_float2(0.0f, -h_mm);
+  edges[3].v = make_float2(half_s + half_w, 0.0f);
+  edges[3].a_b = wav_make_complex(0.0f, 0.0f);
+  edges[3].iab_2 = wav_make_complex(0.0f, 1.0f);
+  return 4;
 }
 
 /* psi02: integrated 0-th order field amplitude over the aperture opening,
@@ -104,18 +129,19 @@ ccl_device_inline float wave_aperture_psi02(const ccl_private wav_fsd_edge *edge
 
 /* FSD aperture data of the slit. */
 struct WaveAperture {
-  wav_fsd_edge edges[2];
+  wav_fsd_edge edges[4];
   int num_edges;
   float psi02;
   float P0;
   float recp_I;
   float P0_pdf;
-  float edge_pdfs[2];
+  float edge_pdfs[4];
   float scale; /* k * fsd_unit */
 };
 
 ccl_device_inline void wave_aperture_setup(const float width,
                                            const float height,
+                                           const float separation,
                                            const float wavelength_nm,
                                            ccl_private WaveAperture *ap)
 {
@@ -123,7 +149,7 @@ ccl_device_inline void wave_aperture_setup(const float width,
   const float k = WAV_TWO_PI_F / fmaxf(lambda, 1e-12f);
   ap->scale = k * wave_fsd_unit();
 
-  ap->num_edges = wave_aperture_build(width, height, ap->edges);
+  ap->num_edges = wave_aperture_build(width, height, separation, ap->edges);
   if (ap->num_edges == 0) {
     ap->psi02 = 0.0f;
     ap->P0 = 0.0f;
@@ -137,13 +163,16 @@ ccl_device_inline void wave_aperture_setup(const float width,
   ap->psi02 = wave_aperture_psi02(ap->edges, ap->num_edges);
   ap->P0 = wav_fsd_p0(ap->psi02);
 
-  const float pj0 = wav_fsd_pj(ap->edges[0]);
-  const float pj1 = wav_fsd_pj(ap->edges[1]);
-  const float total = ap->P0 + pj0 + pj1;
+  float total = ap->P0;
+  for (int i = 0; i < ap->num_edges; ++i) {
+    ap->edge_pdfs[i] = wav_fsd_pj(ap->edges[i]);
+    total += ap->edge_pdfs[i];
+  }
   ap->recp_I = (total > 0.0f) ? 1.0f / total : 0.0f;
   ap->P0_pdf = ap->P0 * ap->recp_I;
-  ap->edge_pdfs[0] = pj0 * ap->recp_I;
-  ap->edge_pdfs[1] = pj1 * ap->recp_I;
+  for (int i = 0; i < ap->num_edges; ++i) {
+    ap->edge_pdfs[i] *= ap->recp_I;
+  }
 }
 
 /* ASF of the aperture at the canonical coordinate xi. */
@@ -167,6 +196,7 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
                                                    const float dispersion,
                                                    const float polarizer_angle,
                                                    const float polarized_input,
+                                                   const float slit_separation,
                                                    const Spectrum weight)
 {
   ccl_private WaveDiffractionBsdf *bsdf = (ccl_private WaveDiffractionBsdf *)bsdf_alloc(
@@ -180,6 +210,7 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
     bsdf->dispersion = dispersion > 0.0f ? 1.0f : 0.0f;
     bsdf->polarizer_angle = polarizer_angle;
     bsdf->polarized_input = polarized_input > 0.0f ? 1.0f : 0.0f;
+    bsdf->slit_separation = fmaxf(slit_separation, 0.0f);
     bsdf->type = CLOSURE_BSDF_WAVE_DIFFRACTION_ID;
     sd->runtime_flag |= (SR_BSDF | SR_BSDF_HAS_EVAL | SR_BSDF_HAS_TRANSMISSION);
   }
@@ -202,7 +233,7 @@ ccl_device_inline float wave_diffraction_eval_pdf_wavelength(
     const float wavelength_nm)
 {
   WaveAperture ap;
-  wave_aperture_setup(bsdf->width, bsdf->height, wavelength_nm, &ap);
+  wave_aperture_setup(bsdf->width, bsdf->height, bsdf->slit_separation, wavelength_nm, &ap);
   if (ap.num_edges == 0 || ap.recp_I <= 0.0f)
     return 0.0f;
 
@@ -232,7 +263,11 @@ ccl_device_inline float wave_diffraction_eval_pdf_wavelength(
   const float2 zeta = dev * (1.0f / sqrtf(1.0f - dev2));
   const float2 xi = make_float2(zeta.x * ap.scale, zeta.y * ap.scale);
 
-  return wave_aperture_pdf(&ap, xi);
+  /* Return the unnormalized ASF (direction-dependent scattering strength).
+   * The sampling pdf stays normalized (see wav_fsd_sample), so the ratio
+   * eval/pdf carries the full angular pattern into NEE (direct-light)
+   * evaluation, where the ASF shape is directly visible on the surface. */
+  return wave_aperture_asf(&ap, xi);
 }
 
 /* Wavelength used to drive direction sampling: in dispersion mode the middle
@@ -320,13 +355,17 @@ ccl_device int bsdf_wave_diffraction_sample(const ccl_private ShaderClosure *sc,
   const float sampling_wavelength = wave_diffraction_sampling_wavelength(bsdf);
 
   WaveAperture ap;
-  wave_aperture_setup(bsdf->width, bsdf->height, sampling_wavelength, &ap);
+  wave_aperture_setup(bsdf->width, bsdf->height, bsdf->slit_separation, sampling_wavelength, &ap);
   if (ap.num_edges == 0 || ap.recp_I <= 0.0f) {
     *pdf = 0.0f;
     *eval = zero_spectrum();
     return LABEL_NONE;
   }
 
+  /* Importance sampling of the transmission hemisphere following the ASF
+   * (rejection sampling), matching the wave_tracer f = pdf convention. The
+   * closure value at the sampled direction is the ASF itself, so energy is
+   * transported correctly to receiver surfaces through the aperture. */
   wav_fsd_aperture sapa;
   sapa.edges = ap.edges;
   sapa.num_edges = ap.num_edges;
@@ -367,11 +406,13 @@ ccl_device int bsdf_wave_diffraction_sample(const ccl_private ShaderClosure *sc,
   const float wo_z = (s_in >= 0.0f ? -1.0f : 1.0f) * sqrtf(1.0f - wo2);
 
   *wo = normalize(bsdf->T * wo_proj.x + B * wo_proj.y + bsdf->N * wo_z);
+  /* Direction sampling follows the ASF (importance sampling). The reported
+   * pdf is the true sampling density, and eval returns the ASF itself
+   * (f = pdf convention, wave_tracer), so energy is transported correctly
+   * through the aperture to receiver surfaces. */
   *pdf = ret.pdf;
-  /* f = pdf convention (wave_tracer): at the sampled direction the value
-   * equals the pdf of the sampling distribution; in dispersion mode the
-   * per-channel values are the ASFs of the RGB primary wavelengths. */
   *eval = wave_diffraction_eval_spectrum(bsdf, wi, *wo, pdf);
+  *pdf = ret.pdf;
   return LABEL_TRANSMIT | LABEL_DIFFUSE;
 }
 

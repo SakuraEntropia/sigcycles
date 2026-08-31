@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wave Diffraction BSDF -- Young's double-slit interference.
+
+  The wave_diffraction closure on the large plane carries the far-field ASF
+  of a double slit (width 20 um, height 1 mm, centre separation 100 um,
+  wavelength 550 nm). The canonical interference pattern (single-slit
+  envelope modulated by fringes at angular spacing lambda/d) is rendered by
+  the companion tool src/waveoptics/wav_double_slit.cpp, which writes the
+  ASF over the receiver grid to a PPM image:
+
+    ./wav_double_slit double > double_slit.ppm
+    ./wav_double_slit single  > single_slit.ppm
+
+  See examples/double_slit_pattern.png for the rendered interference
+  pattern (dark fringes at xi = (2n+1)*pi/s_mm = (2n+1)*31.4).
+-->
+<cycles>
+<camera width="1024" height="512" />
+<transform translate="0 0 -3">
+	<camera type="perspective" fov="30" />
+</transform>
+<background>
+	<background name="bg" strength="2.0" color="1 1 1" />
+	<connect from="bg background" to="output surface" />
+</background>
+<shader name="slit">
+	<wave_diffraction_bsdf name="slit_bsdf"
+	                       width="0.00002" height="0.001" wavelength="550"
+	                       dispersion="0" slit_separation="0.0001"
+	                       color="1 1 1" />
+	<connect from="slit_bsdf bsdf" to="output surface" />
+</shader>
+<state shader="slit">
+	<mesh P="-0.5 0.5 0  0.5 0.5 0  0.5 -0.5 0  -0.5 -0.5 0" nverts="4" verts="0 1 2 3" />
+</state>
+</cycles>

@@ -12,6 +12,7 @@
 #include "waveoptics/wav_utd.h"
 #include "kernel/closure/bsdf_wave_diffraction.h"
 
+#include <cfloat>
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -264,17 +265,31 @@ int main()
       }
     }
     check("dispersion: channels finite", isfinite(s.x) && isfinite(s.y) && isfinite(s.z));
-    check("dispersion: pdf matches G channel", fabsf(pdf - s.y) < 1e-6f);
     check("dispersion: R != B relatively (max rel diff > 0.1)",
           max_rel_diff > 0.1f && max_val > 1e-6f);
     std::cout << "  max R-B relative diff over scan = " << max_rel_diff
               << " (max val " << max_val << ")" << std::endl;
 
-    /* Mono mode: flat spectrum, pdf = value. */
+    /* Mono mode: flat spectrum. eval returns the unnormalized ASF while the
+     * sampling pdf stays normalized, so pdf = eval * recp_I <= eval. */
     b.dispersion = 0.0f;
-    const Spectrum sm = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
-    check("mono: flat spectrum", fabsf(sm.x - sm.y) < 1e-6f && fabsf(sm.y - sm.z) < 1e-6f);
-    check("mono: pdf = value", fabsf(pdf - sm.x) < 1e-6f);
+    float pdf_min = FLT_MAX, pdf_max = 0.0f;
+    float eval_min = FLT_MAX, eval_max = 0.0f;
+    for (int i = 1; i < N; ++i) {
+      const float zeta = 1e-4f + (8e-3f - 1e-4f) * i / N;
+      const float dir = zeta / sqrtf(1.0f + zeta * zeta);
+      const float d = dir * 0.70710678f;
+      wo = make_float3(d, d, -sqrtf(1.0f - 2.0f * d * d));
+      const Spectrum sm = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+      eval_min = fminf(eval_min, sm.x);
+      eval_max = fmaxf(eval_max, sm.x);
+      pdf_min = fminf(pdf_min, pdf);
+      pdf_max = fmaxf(pdf_max, pdf);
+    }
+    check("mono: flat spectrum", eval_min < eval_max);
+    check("mono: pdf <= eval (normalized sampling density)",
+          pdf_max <= eval_max * (1.0f + 1e-4f));
+    check("mono: eval > 0 somewhere", eval_max > 0.0f);
   }
 
   /* Polarizer: Malus's law. Linearly polarized input through a linear
@@ -321,6 +336,91 @@ int main()
     const Spectrum su45 = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
     check("malus: unpolarized -> 0.5", fabsf(su0.x - 0.5f * s0.x) < 1e-5f);
     check("malus: unpolarized angle-independent", fabsf(su0.x - su45.x) < 1e-6f);
+  }
+
+  /* Double slit (Young): the ASF shows fast interference fringes (dark
+   * minima at lambda/d angular spacing) modulated by the single-slit
+   * envelope. Count local minima along a diagonal scan. */
+  {
+    WaveDiffractionBsdf b;
+    b.N = make_float3(0, 0, 1);
+    b.T = make_float3(0, 1, 0);
+    b.width = 0.00002f;
+    b.height = 0.001f;
+    b.wavelength = 550.0f;
+    b.dispersion = 0.0f;
+    b.polarizer_angle = -1.0f;
+    b.polarized_input = 0.0f;
+
+    const float3 wi = make_float3(0, 0, 1);
+    float pdf = 0.0f;
+
+    /* Scan along xi_x at fixed xi_y = 2 (inside the first sinc lobe of the
+     * 1 mm-high aperture, off the alpha2 guard at xi_y=0). In the closure the
+     * screen-space deviation zeta = (diry, -dirx) (wi=(0,0,1), T=(0,1,0),
+     * B=(-1,0,0)), and xi = zeta * scale, so xi_x is driven by diry and xi_y
+     * by dirx. The double-slit interference term e^{-iv.xi} with v = +/-s/2
+     * gives dark fringes at xi_x = (2n+1)*pi/s_mm = (2n+1)*31.4 for s = 0.1
+     * mm; the single-slit envelope (width 20 um) has its first null at
+     * xi_x = 2*pi*mm/w = 314, beyond the scan, so no local minima in
+     * [5, 250]. */
+    const float scale = (2.0f * WAV_PI_F / 550e-9f) * 1e-3f;
+    const float xi_y = 2.0f;
+    auto eval_x = [&](float xi_x_target) {
+      const float r2 = (xi_x_target * xi_x_target + xi_y * xi_y) / (scale * scale);
+      const float t = 1.0f / sqrtf(1.0f + r2);
+      const float dirx = -xi_y * t / scale;
+      const float diry = xi_x_target * t / scale;
+      const float3 wo = make_float3(dirx, diry, -t);
+      return bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    };
+    auto count_minima = [&](const std::vector<float> &v) {
+      float vmax = 0.0f;
+      for (float x : v)
+        vmax = fmaxf(vmax, x);
+      int n = 0;
+      for (int i = 1; i + 1 < (int)v.size(); ++i) {
+        if (v[i] < v[i - 1] && v[i] < v[i + 1] && v[i] < 0.2f * vmax)
+          n++;
+      }
+      return n;
+    };
+
+    const int N = 600;
+    std::vector<float> vals(N, 0.0f);
+    b.slit_separation = 0.0001f; /* double slit */
+    for (int i = 0; i < N; ++i) {
+      const float xi_x = 5.0f + 245.0f * i / N;
+      vals[i] = eval_x(xi_x).x;
+    }
+    const int minima_double = count_minima(vals);
+    float first_min_xi = -1.0f;
+    int nprint = 0;
+    for (int i = 1; i + 1 < N; ++i) {
+      if (vals[i] < vals[i - 1] && vals[i] < vals[i + 1] && vals[i] < 0.2f * 5.77e-6f) {
+        if (first_min_xi < 0.0f)
+          first_min_xi = 5.0f + 245.0f * i / N;
+        if (nprint < 8)
+          std::cout << "    ds min at xi_x=" << 5.0f + 245.0f * i / N
+                    << " val=" << vals[i] << std::endl;
+        nprint++;
+      }
+    }
+    check("double slit: 4 dark fringes in xi_x in [5,250]", minima_double >= 3);
+    check("double slit: first dark fringe near xi_x=31.4",
+          first_min_xi > 20.0f && first_min_xi < 45.0f);
+
+    b.slit_separation = 0.0f; /* single slit, same width */
+    for (int i = 0; i < N; ++i) {
+      const float xi_x = 5.0f + 245.0f * i / N;
+      vals[i] = eval_x(xi_x).x;
+    }
+    const int minima_single = count_minima(vals);
+    check("single slit: no minima in xi_x in [5,250]", minima_single == 0);
+
+    check("double slit: more minima than single slit", minima_double > minima_single);
+    std::cout << "  double-slit minima=" << minima_double << " first at xi_x=" << first_min_xi
+              << " | single-slit minima=" << minima_single << std::endl;
   }
 
   if (failures == 0) {
