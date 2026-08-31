@@ -10,6 +10,7 @@
 #include "graph/node.h"
 #include "integrator/adaptive_sampling.h"
 #include "integrator/guiding.h"
+#include "scene/research_features.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -39,6 +40,11 @@ struct HaltonSequence {
 class Integrator : public Node {
  public:
   NODE_DECLARE
+
+  /* Research Edition: rendering mode (offline / realtime) and the set of
+   * explicitly enabled research features (space-separated ids). */
+  NODE_SOCKET_API(RenderMode, render_mode)
+  NODE_SOCKET_API(ustring, research_features)
 
   NODE_SOCKET_API(int, min_bounce)
   NODE_SOCKET_API(int, max_bounce)

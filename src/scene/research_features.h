@@ -1,0 +1,46 @@
+#pragma once
+
+#include "util/string.h"
+#include "util/vector.h"
+
+CCL_NAMESPACE_BEGIN
+
+/* Rendering modes (Research Edition spec, section 3). */
+enum class RenderMode : uint {
+  OFFLINE = 0,
+  REALTIME = 1,
+  NUM_RENDER_MODES
+};
+
+/* Experimental status of a research feature. */
+enum class ResearchFeatureStatus {
+  STABLE,
+  EXPERIMENTAL,
+  RESEARCH,
+};
+
+/* Metadata for one research feature: supported render modes, required
+ * dependencies, incompatible features and experimental status.
+ * Dependencies/conflicts are null-terminated id lists. */
+struct ResearchFeatureInfo {
+  const char *id;
+  uint modes;                  /* bitmask of RenderMode values */
+  const char *dependencies[4]; /* required features (null-terminated) */
+  const char *conflicts[4];    /* incompatible features (null-terminated) */
+  ResearchFeatureStatus status;
+};
+
+static constexpr uint render_mode_bit(RenderMode mode)
+{
+  return 1u << (uint)mode;
+}
+
+/* Look up feature info by id; nullptr when unknown. */
+const ResearchFeatureInfo *research_feature_find(const string &id);
+
+/* Validate an enabled-feature set against the registry: checks that every
+ * feature is known, its dependencies are present and no conflicts are
+ * enabled. On failure returns false and fills *error with the reason. */
+bool research_validate_features(const vector<string> &enabled, string *error);
+
+CCL_NAMESPACE_END

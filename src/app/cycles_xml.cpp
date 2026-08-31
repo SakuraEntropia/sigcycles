@@ -812,6 +812,17 @@ static void xml_read_scene(XMLReadState &state, const xml_node scene_node)
     }
     else if (string_iequals(node.name(), "integrator")) {
       xml_read_node(state, state.scene->integrator, node);
+
+      /* Research Edition: validate the enabled research feature set. */
+      const string features = state.scene->integrator->get_research_features().string();
+      if (!features.empty()) {
+        vector<string> enabled;
+        string_split(enabled, features);
+        string error;
+        if (!research_validate_features(enabled, &error)) {
+          LOG_ERROR << error;
+        }
+      }
     }
     else if (string_iequals(node.name(), "camera")) {
       xml_read_camera(state, node);

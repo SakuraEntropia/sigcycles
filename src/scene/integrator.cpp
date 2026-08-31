@@ -53,6 +53,13 @@ NODE_DEFINE(Integrator)
 {
   NodeType *type = NodeType::add("integrator", create);
 
+  /* Research Edition: render mode and enabled research features. */
+  static NodeEnum render_mode_enum;
+  render_mode_enum.insert("offline", (int)RenderMode::OFFLINE);
+  render_mode_enum.insert("realtime", (int)RenderMode::REALTIME);
+  SOCKET_ENUM(render_mode, "Render Mode", render_mode_enum, (int)RenderMode::OFFLINE);
+  SOCKET_STRING(research_features, "Research Features", ustring());
+
   SOCKET_INT(min_bounce, "Min Bounce", 0);
   SOCKET_INT(max_bounce, "Max Bounce", 7);
 
