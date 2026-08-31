@@ -9,7 +9,7 @@
 | 3 | Adaptive Sampling | ✓ | - | - | - | Stable(已有) | 自带 | - |
 | 4 | MNEE 焦散 | ✓ | - | - | - | Stable(已有) | 自带 | - |
 | 5 | Wave Diffraction BSDF | (✓) | - | ✓ | ✓ | Experimental | waveoptics(CC-NC 重实现) | Apache-2.0 侧 |
-| 6 | 波长采样/光谱化 | (✓) | - | ✓ | - | Research(Phase1) | pbrt-v4 | Apache-2.0 |
+| 6 | 波长采样/光谱化（3-band dispersion）| (✓) | - | ✓ | ✓ | Experimental(Phase1-1) | wav_spectrum.h + closure dispersion | - |
 | 7 | Stokes 偏振 | - | - | ✓ | - | Research(Phase1) | mitsuba3 | BSD-3 |
 | 8 | SVGF | - | ✓ | - | - | Research(Phase1) | 算法公开 | 重写 |
 | 9 | OIDN v3 时域去噪 | ✓ | ✓ | - | - | Research(Phase1) | RenderKit/oidn | Apache-2.0 |

@@ -53,7 +53,7 @@
 
 | 优先级 | 技术 | 论文/年份 | 参考 | 难度 | 备注 |
 |---|---|---|---|---|---|
-| P0 | 波长采样 / 光谱化 FSD | FSD BSDF (2024)；pbrt-v4 光谱 | pbrt-v4（Apache-2.0）| 3 | 解锁衍射色散与干涉色；当前最大管线约束（closure 单色）|
+| P0 | 波长采样 / 光谱化 FSD | FSD BSDF (2024)；pbrt-v4 光谱 | pbrt-v4（Apache-2.0）| 3 | ✅ Phase1-1：3-band dispersion 模式已实现（wav_spectrum.h）；完整 CIE 随机波长采样待续 |
 | P0 | Stokes 偏振 AOV + Mueller 层 | EG 2018；EGSR 2016 | mitsuba3 stokes.cpp（BSD-3）| 3 | wav_stokes.h 已备；需 4 通道输出 |
 | P1 | UTD 边衍射进 integrator | UTD（教科书）；FSD BSDF (2024) | wave_tracer UTD 数学（CC-NC，重实现）；Sionna（Apache-2.0）交叉验证 | 4 | 需边几何提供者抽象（Cycles BVH 缺边邻接）|
 | P1 | 薄膜多层 closure | Multilayer Iridescence (SA 2023) | 无代码；wav_fresnel.h 契合 | 2-3 | 依赖波长采样 |
