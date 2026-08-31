@@ -28,6 +28,19 @@ ccl_device float power_heuristic(const float a, const float b)
   return (a * a) / (a * a + b * b);
 }
 
+/* Generalized power heuristic with a configurable exponent.
+ * exponent 2.0 = power heuristic (default), 1.0 = balance heuristic. */
+ccl_device float power_heuristic_pow(const float a, const float b, const float exponent)
+{
+  if (exponent == 2.0f) {
+    return power_heuristic(a, b);
+  }
+  const float pa = powf(fmaxf(a, 0.0f), exponent);
+  const float pb = powf(fmaxf(b, 0.0f), exponent);
+  const float sum = pa + pb;
+  return (sum > 0.0f) ? pa / sum : 0.0f;
+}
+
 ccl_device float power_heuristic_3(const float a, const float b, float c)
 {
   return (a * a) / (a * a + b * b + c * c);

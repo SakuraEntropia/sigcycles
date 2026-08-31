@@ -59,8 +59,11 @@ ccl_device bool film_adaptive_sampling_convergence_check(KernelGlobals kg,
   const float intensity_scale = kernel_data.film.exposure / sample;
 
   /* The per pixel error as seen in section 2.1 of
-   * "A hierarchical automatic stopping condition for Monte Carlo global illumination" */
-  const float error_difference = (fabsf(I.x - A.x) + fabsf(I.y - A.y) + fabsf(I.z - A.z)) *
+   * "A hierarchical automatic stopping condition for Monte Carlo global illumination".
+   * Research Edition: use the maximum channel error instead of the sum, which is
+   * more robust for strongly coloured pixels (the sum over-weights bright hues). */
+  const float error_difference = fmaxf(fabsf(I.x - A.x),
+                                       fmaxf(fabsf(I.y - A.y), fabsf(I.z - A.z))) *
                                  intensity_scale;
   const float intensity = (I.x + I.y + I.z) * intensity_scale;
 

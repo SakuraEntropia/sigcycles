@@ -338,7 +338,7 @@ ccl_device_inline float light_sample_mis_weight_forward(KernelGlobals kg,
 #else
   (void)kg;
 #endif
-  return power_heuristic(forward_pdf, nee_pdf);
+  return power_heuristic_pow(forward_pdf, nee_pdf, kernel_data.integrator.mis_exponent);
 }
 
 ccl_device_inline float light_sample_mis_weight_nee(KernelGlobals kg,
@@ -358,7 +358,7 @@ ccl_device_inline float light_sample_mis_weight_nee(KernelGlobals kg,
 #else
   (void)kg;
 #endif
-  return power_heuristic(nee_pdf, forward_pdf);
+  return power_heuristic_pow(nee_pdf, forward_pdf, kernel_data.integrator.mis_exponent);
 }
 
 /* Next event estimation sampling.
