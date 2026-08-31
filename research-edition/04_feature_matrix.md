@@ -2,6 +2,8 @@
 
 | # | Feature | Offline | Realtime | Wave | Enabled | Status | 参考实现 | 许可 |
 |---|---|---|---|---|---|---|---|---|
+| 0 | RenderMode + Feature 系统 | ✓ | ✓ | ✓ | ✓ | Stable(Phase0) | src/scene/research_features.* |
+| 0b | lamp 光源 tfm 修复 | ✓ | ✓ | - | ✓ | Stable(Phase0) | src/app/cycles_xml.cpp |
 | 1 | Classic Path Tracing | ✓ | (✓) | - | ✓ | Stable | 基线 | Apache-2.0 |
 | 2 | Path Guiding (OpenPGL) | ✓ | - | - | - | Stable(已有) | OpenPGL | Apache-2.0 |
 | 3 | Adaptive Sampling | ✓ | - | - | - | Stable(已有) | 自带 | - |
