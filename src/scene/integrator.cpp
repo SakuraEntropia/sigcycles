@@ -60,6 +60,7 @@ NODE_DEFINE(Integrator)
   SOCKET_ENUM(render_mode, "Render Mode", render_mode_enum, (int)RenderMode::OFFLINE);
   SOCKET_STRING(research_features, "Research Features", ustring());
   SOCKET_FLOAT(mis_exponent, "MIS Exponent", 2.0f);
+  SOCKET_BOOLEAN(svgf_temporal, "SVGF Temporal", false);
 
   SOCKET_INT(min_bounce, "Min Bounce", 0);
   SOCKET_INT(max_bounce, "Max Bounce", 7);
@@ -227,6 +228,7 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
 
   /* Plus one so that a bounce of 0 indicates no global illumination, only direct illumination. */
   kintegrator->mis_exponent = (mis_exponent >= 1.0f) ? mis_exponent : 2.0f;
+  kintegrator->svgf_temporal = svgf_temporal;
 
   kintegrator->min_bounce = min_bounce + 1;
   kintegrator->max_bounce = max_bounce + 1;

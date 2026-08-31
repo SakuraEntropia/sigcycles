@@ -46,6 +46,7 @@ class Integrator : public Node {
   NODE_SOCKET_API(RenderMode, render_mode)
   NODE_SOCKET_API(ustring, research_features)
   NODE_SOCKET_API(float, mis_exponent)
+  NODE_SOCKET_API(bool, svgf_temporal)
 
   NODE_SOCKET_API(int, min_bounce)
   NODE_SOCKET_API(int, max_bounce)

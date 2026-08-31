@@ -53,12 +53,12 @@ const ResearchFeatureInfo feature_registry[] = {
      render_mode_bit(RenderMode::OFFLINE),
      {nullptr},
      {nullptr},
-     ResearchFeatureStatus::RESEARCH},
+     ResearchFeatureStatus::EXPERIMENTAL},
     {"polarization",
      render_mode_bit(RenderMode::OFFLINE),
      {"wavelength_sampling", nullptr},
      {nullptr},
-     ResearchFeatureStatus::RESEARCH},
+     ResearchFeatureStatus::EXPERIMENTAL},
     {"restir_di",
      render_mode_bit(RenderMode::OFFLINE) | render_mode_bit(RenderMode::REALTIME),
      {nullptr},
@@ -68,7 +68,7 @@ const ResearchFeatureInfo feature_registry[] = {
      render_mode_bit(RenderMode::REALTIME),
      {nullptr},
      {nullptr},
-     ResearchFeatureStatus::RESEARCH},
+     ResearchFeatureStatus::EXPERIMENTAL},
 };
 
 }  // namespace

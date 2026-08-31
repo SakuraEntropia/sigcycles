@@ -178,6 +178,7 @@ KERNEL_STRUCT_MEMBER(integrator, float, light_inv_rr_threshold)
 /* Research Edition: power-heuristic exponent for BSDF/light MIS
  * (2.0 = default power heuristic, 1.0 = balance heuristic). */
 KERNEL_STRUCT_MEMBER(integrator, float, mis_exponent)
+KERNEL_STRUCT_MEMBER(integrator, int, svgf_temporal)
 /* Bounces. */
 KERNEL_STRUCT_MEMBER(integrator, int, min_bounce)
 KERNEL_STRUCT_MEMBER(integrator, int, max_bounce)
