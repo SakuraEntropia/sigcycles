@@ -66,6 +66,17 @@ class RESEARCH_PT_cycles(bpy.types.Panel):
         row.prop(props, "mis_exponent")
         row.prop(props, "svgf_temporal")
 
+        # 若使用内置 Research Edition 内核（Blender main 编译版），
+        # 直接读写 scene.cycles.research_* 属性。
+        cscene = context.scene.cycles
+        if hasattr(cscene, "research_render_mode"):
+            box = layout.box()
+            box.label(text="Built-in Research Edition kernel detected:")
+            box.prop(cscene, "research_render_mode")
+            box.prop(cscene, "research_features")
+            box.prop(cscene, "research_mis_exponent")
+            box.prop(cscene, "research_svgf_temporal")
+
         # 说明
         box = layout.box()
         box.label(text="Requires a Cycles build with the")

@@ -127,3 +127,41 @@ OSL shader 即可在官方 Blender 用（性能低于原生闭包，但零编译
 ---
 *本指南与 research-edition/ 其它文档配套；Blender 源码版本不同时，
 节点/RNA 文件名可能变化，但映射关系一致。*
+
+---
+
+## 10. Blender 5.3 移植关键发现（实测验证）
+
+### 10.1 Socket 名匹配规则（重要!）
+
+Blender 5.3 的 Cycles 中，ShaderInput::name() 返回 UI 名（socket_type.ui_name），
+不是变量 identifier。因此：
+
+- SVMCompiler::input_float("n0") 会返回 nullptr 并崩溃 —— 必须用 UI 名
+  input_float("Ambient Index")。
+- Blender 节点声明的输入名（b.add_input<decl::Float>("Ambient Index")）生成
+  identifier = name（含空格），cycles 侧 name() 也必须等于该名字，
+  两侧才能匹配（node_find_input_by_name 用 b_socket.identifier 匹配
+  node->input()）。
+- 结论：Blender 节点输入名、cycles NODE_DEFINE 的 ui_name、compile 里
+  input_float() 参数三者必须完全一致。
+
+### 10.2 厚度单位
+
+- Blender 节点 "Film Thickness (nm)" 默认 100.0（nm）。
+- cycles scene 节点 SOCKET_IN_FLOAT(thickness, "Film Thickness (nm)", 100.0f)。
+- closure setup 里 thickness * 1e-9f 转米；eval 里波长 *1e-9f 转米。
+
+### 10.3 实测结果（built 8e5913cb9515）
+
+- 60nm -> 蓝 (0,8,24)
+- 120nm -> 橙红 (32,16,0)
+- 200nm -> 黄 (40,32,0)
+- 与 wav_thin_film_reflectance_unpolarized 数值一致。
+- Wave Diffraction 节点 width=0.01 时渲染白色（窄缝 0.2mm 能量过低近黑）。
+
+### 10.4 相机对不准的坑
+
+Blender 默认相机朝 -Z，cam.location=(0,-6,1.5) 不设 rotation 会看地面，
+渲染出来全是背景色（59,59,59），误以为闭包没生效。用
+dir_vec.to_track_quat('-Z','Y') 或显式 rotation 对准目标。
