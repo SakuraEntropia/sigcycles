@@ -10,6 +10,7 @@
 #include "waveoptics/wav_gaussian.h"
 #include "waveoptics/wav_stokes.h"
 #include "waveoptics/wav_utd.h"
+#include "kernel/closure/bsdf_wave_diffraction.h"
 
 #include <cmath>
 #include <iostream>
@@ -225,6 +226,53 @@ int main()
     check("sampler matches ASF 2D cells (max dev < 0.01)", compared > 0 && max_dev < 0.01f);
     std::cout << "  sampler acceptance=" << ok_s << "/" << ns << " 2D max_dev=" << max_dev
               << " over " << compared << " cells" << std::endl;
+  }
+
+  /* Dispersion: the three-band eval produces channel-dependent ASFs. */
+  {
+    WaveDiffractionBsdf b;
+    b.N = make_float3(0, 0, 1);
+    b.T = make_float3(0, 1, 0);
+    b.width = 0.0001f;
+    b.height = 0.002f;
+    b.wavelength = 550.0f;
+    b.dispersion = 1.0f;
+
+    const float3 wi = make_float3(0, 0, 1);
+    float pdf = 0.0f;
+    Spectrum s = zero_spectrum();
+    float3 wo = make_float3(0, 0, -1);
+    /* Scan off-axis directions: the dispersion shifts the fringe pattern per
+     * wavelength, so the R/G/B channels must differ substantially somewhere. */
+    float max_rel_diff = 0.0f;
+    float max_val = 0.0f;
+    const int N = 200;
+    for (int i = 1; i < N; ++i) {
+      const float zeta = 1e-4f + (8e-3f - 1e-4f) * i / N;
+      const float dir = zeta / sqrtf(1.0f + zeta * zeta);
+      /* Diagonal off-axis direction: both in-plane components are non-zero so
+       * the alpha2 lobe (which has a zero on the xi_y=0 line) evaluates. */
+      const float d = dir * 0.70710678f;
+      wo = make_float3(d, d, -sqrtf(1.0f - 2.0f * d * d));
+      s = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+      max_val = fmaxf(max_val, fmaxf(fabsf(s.x), fabsf(s.z)));
+      const float denom = fmaxf(fabsf(s.x), fabsf(s.z));
+      if (denom > 1e-12f) {
+        max_rel_diff = fmaxf(max_rel_diff, fabsf(s.x - s.z) / denom);
+      }
+    }
+    check("dispersion: channels finite", isfinite(s.x) && isfinite(s.y) && isfinite(s.z));
+    check("dispersion: pdf matches G channel", fabsf(pdf - s.y) < 1e-6f);
+    check("dispersion: R != B relatively (max rel diff > 0.1)",
+          max_rel_diff > 0.1f && max_val > 1e-6f);
+    std::cout << "  max R-B relative diff over scan = " << max_rel_diff
+              << " (max val " << max_val << ")" << std::endl;
+
+    /* Mono mode: flat spectrum, pdf = value. */
+    b.dispersion = 0.0f;
+    const Spectrum sm = bsdf_wave_diffraction_eval((const ShaderClosure *)&b, wi, wo, &pdf);
+    check("mono: flat spectrum", fabsf(sm.x - sm.y) < 1e-6f && fabsf(sm.y - sm.z) < 1e-6f);
+    check("mono: pdf = value", fabsf(pdf - sm.x) < 1e-6f);
   }
 
   if (failures == 0) {

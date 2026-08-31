@@ -268,6 +268,7 @@ set(SRC_WAVEOPTICS_HEADERS
   ../waveoptics/wav_fsd_tables.h
   ../waveoptics/wav_gaussian.h
   ../waveoptics/wav_math.h
+  ../waveoptics/wav_spectrum.h
   ../waveoptics/wav_stokes.h
   ../waveoptics/wav_utd.h
 )

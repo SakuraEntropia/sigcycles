@@ -1036,9 +1036,10 @@ struct SVMNodeWaveDiffractionBsdfData {
   SVMInputFloat width;
   SVMInputFloat height;
   SVMInputFloat wavelength;
+  SVMInputFloat dispersion;
   SVMStackOffset normal_offset;
   SVMStackOffset tangent_offset;
-  uint8_t _pad[6];
+  uint8_t _pad[2];
 };
 static_assert(alignof(SVMNodeWaveDiffractionBsdfData) <= alignof(uint));
 static_assert(sizeof(SVMNodeWaveDiffractionBsdfData) % sizeof(uint) == 0);

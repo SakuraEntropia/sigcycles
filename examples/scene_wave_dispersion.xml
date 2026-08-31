@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wave Diffraction BSDF -- dispersion demo.
+
+  Same dark-box slit setup as scene_wave_diffraction.xml, but the slit uses
+  Dispersion = 1: the diffraction pattern is evaluated at the three sRGB
+  primary wavelengths, so the interference fringes separate by colour
+  (red diffracts wider than blue) - white light through the slit shows
+  chromatic dispersion.
+-->
+<cycles>
+<camera width="800" height="500" />
+<transform translate="0 0.08 0.15" rotate="10 1 0 0">
+	<camera type="perspective" fov="30" />
+</transform>
+<background>
+	<sky_texture name="tex" sky_type="hosek_wilkie" sun_direction="0 0 1" />
+	<background name="bg" strength="7.0" />
+	<connect from="tex color" to="bg color" />
+	<connect from="bg background" to="output surface" />
+</background>
+<shader name="wall">
+	<diffuse_bsdf name="wall_bsdf" color="0.0 0.0 0.0" />
+	<connect from="wall_bsdf bsdf" to="output surface" />
+</shader>
+<shader name="slit">
+	<wave_diffraction_bsdf name="slit_bsdf"
+	                       width="0.00002" height="0.001" wavelength="550"
+	                       dispersion="1" color="1 1 1" />
+	<connect from="slit_bsdf bsdf" to="output surface" />
+</shader>
+<shader name="receiver">
+	<diffuse_bsdf name="recv_bsdf" color="0.9 0.9 0.9" />
+	<connect from="recv_bsdf bsdf" to="output surface" />
+</shader>
+<transform translate="0 0 -0.3">
+	<state shader="receiver">
+		<mesh P="-0.1 -0.1 0  0.1 -0.1 0  0.1 0.1 0  -0.1 0.1 0" nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+<transform translate="0 0 0.3">
+	<state shader="wall">
+		<mesh P="-0.1 0.1 0  0.1 0.1 0  0.1 -0.1 0  -0.1 -0.1 0" nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+<transform translate="0 0 0.3001">
+	<state shader="slit">
+		<mesh P="0 0.001 0  0 -0.001 0  -0.00002 -0.001 0  -0.00002 0.001 0"
+		      nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+<transform translate="0 0 0" rotate="90 1 0 0">
+	<state shader="wall">
+		<mesh P="-0.1 0.3 0  0.1 0.3 0  0.1 -0.3 0  -0.1 -0.3 0" nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+<transform translate="0 0 0" rotate="-90 1 0 0">
+	<state shader="wall">
+		<mesh P="-0.1 0.3 0  0.1 0.3 0  0.1 -0.3 0  -0.1 -0.3 0" nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+<transform translate="0 0 0" rotate="90 0 1 0">
+	<state shader="wall">
+		<mesh P="-0.1 0.3 0  0.1 0.3 0  0.1 -0.3 0  -0.1 -0.3 0" nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+<transform translate="0 0 0" rotate="-90 0 1 0">
+	<state shader="wall">
+		<mesh P="-0.1 0.3 0  0.1 0.3 0  0.1 -0.3 0  -0.1 -0.3 0" nverts="4" verts="0 1 2 3" />
+	</state>
+</transform>
+</cycles>

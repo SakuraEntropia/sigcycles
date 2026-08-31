@@ -565,7 +565,8 @@ ccl_device
       const float width = stack_load(stack, bsdf_data.width);
       const float height = stack_load(stack, bsdf_data.height);
       const float wavelength = stack_load(stack, bsdf_data.wavelength);
-      bsdf_wave_diffraction_setup(sd, N, T, width, height, wavelength, weight);
+      const float dispersion = stack_load(stack, bsdf_data.dispersion);
+      bsdf_wave_diffraction_setup(sd, N, T, width, height, wavelength, dispersion, weight);
       break;
     }
     case CLOSURE_BSDF_TRANSPARENT_ID: {

@@ -29,6 +29,7 @@
 
 #include "waveoptics/wav_fsd.h"
 #include "waveoptics/wav_fsd_sampler.h"
+#include "waveoptics/wav_spectrum.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -39,7 +40,8 @@ struct WaveDiffractionBsdf {
   float3 T;         /* tangent on the surface (slit axis) */
   float width;      /* slit width, scene units (meters) */
   float height;     /* slit height, scene units (meters) */
-  float wavelength; /* wavelength, nanometers */
+  float wavelength; /* wavelength, nanometers (mono mode) */
+  float dispersion; /* three-band dispersion: 0 = mono, 1 = RGB primaries */
 };
 
 static_assert(sizeof(ShaderClosure) >= sizeof(WaveDiffractionBsdf),
@@ -160,6 +162,7 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
                                                    const float width,
                                                    const float height,
                                                    const float wavelength,
+                                                   const float dispersion,
                                                    const Spectrum weight)
 {
   ccl_private WaveDiffractionBsdf *bsdf = (ccl_private WaveDiffractionBsdf *)bsdf_alloc(
@@ -170,6 +173,7 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
     bsdf->width = fmaxf(width, 0.0f);
     bsdf->height = fmaxf(height, 0.0f);
     bsdf->wavelength = fmaxf(wavelength, 0.0f);
+    bsdf->dispersion = dispersion > 0.0f ? 1.0f : 0.0f;
     bsdf->type = CLOSURE_BSDF_WAVE_DIFFRACTION_ID;
     sd->runtime_flag |= (SR_BSDF | SR_BSDF_HAS_EVAL | SR_BSDF_HAS_TRANSMISSION);
   }
@@ -183,13 +187,16 @@ ccl_device_inline float3 wave_to_local(const ccl_private WaveDiffractionBsdf *bs
   return make_float3(dot(d, bsdf->T), dot(d, B), dot(d, bsdf->N));
 }
 
-/* Evaluates the diffraction pattern. Returns the density (f = pdf). */
-ccl_device_inline float wave_diffraction_eval_pdf(const ccl_private WaveDiffractionBsdf *bsdf,
-                                                  const float3 wi,
-                                                  const float3 wo)
+/* Evaluates the diffraction pattern at a given wavelength (nm).
+ * Returns the density (f = pdf). */
+ccl_device_inline float wave_diffraction_eval_pdf_wavelength(
+    const ccl_private WaveDiffractionBsdf *bsdf,
+    const float3 wi,
+    const float3 wo,
+    const float wavelength_nm)
 {
   WaveAperture ap;
-  wave_aperture_setup(bsdf->width, bsdf->height, bsdf->wavelength, &ap);
+  wave_aperture_setup(bsdf->width, bsdf->height, wavelength_nm, &ap);
   if (ap.num_edges == 0 || ap.recp_I <= 0.0f)
     return 0.0f;
 
@@ -222,15 +229,50 @@ ccl_device_inline float wave_diffraction_eval_pdf(const ccl_private WaveDiffract
   return wave_aperture_pdf(&ap, xi);
 }
 
+/* Wavelength used to drive direction sampling: in dispersion mode the middle
+ * (green primary) band, otherwise the user wavelength. The pdf reported by
+ * eval() must match this distribution. */
+ccl_device_inline float wave_diffraction_sampling_wavelength(
+    const ccl_private WaveDiffractionBsdf *bsdf)
+{
+  return (bsdf->dispersion > 0.0f) ? wav_spectrum_primary_green : bsdf->wavelength;
+}
+
+/* Evaluates the diffraction pattern and returns the spectrum.
+ * Mono mode: single wavelength -> flat spectrum.
+ * Dispersion mode: three-band evaluation at the sRGB primaries; the R/G/B
+ * channels carry the ASF of the red/green/blue primary wavelengths, so the
+ * pattern scale differs per channel and white light shows dispersion.
+ * *pdf is the density of the sampling distribution (green band in dispersion
+ * mode), kept consistent with bsdf_wave_diffraction_sample(). */
+ccl_device_inline Spectrum wave_diffraction_eval_spectrum(
+    const ccl_private WaveDiffractionBsdf *bsdf,
+    const float3 wi,
+    const float3 wo,
+    ccl_private float *pdf)
+{
+  if (bsdf->dispersion > 0.0f) {
+    float p[3];
+    float wavelengths[3];
+    wav_spectrum_three_band(wavelengths);
+    for (int i = 0; i < 3; ++i) {
+      p[i] = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, wavelengths[i]);
+    }
+    *pdf = p[1]; /* green band drives sampling */
+    return make_float3(p[0], p[1], p[2]);
+  }
+  const float p = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, bsdf->wavelength);
+  *pdf = p;
+  return make_spectrum(p);
+}
+
 ccl_device Spectrum bsdf_wave_diffraction_eval(const ccl_private ShaderClosure *sc,
                                                const float3 wi,
                                                const float3 wo,
                                                ccl_private float *pdf)
 {
   const ccl_private WaveDiffractionBsdf *bsdf = (const ccl_private WaveDiffractionBsdf *)sc;
-  const float p = wave_diffraction_eval_pdf(bsdf, wi, wo);
-  *pdf = p;
-  return make_spectrum(p);
+  return wave_diffraction_eval_spectrum(bsdf, wi, wo, pdf);
 }
 
 ccl_device int bsdf_wave_diffraction_sample(const ccl_private ShaderClosure *sc,
@@ -243,8 +285,12 @@ ccl_device int bsdf_wave_diffraction_sample(const ccl_private ShaderClosure *sc,
 {
   const ccl_private WaveDiffractionBsdf *bsdf = (const ccl_private WaveDiffractionBsdf *)sc;
 
+  /* Direction sampling uses the effective sampling wavelength (green band in
+   * dispersion mode), matching the pdf reported by eval(). */
+  const float sampling_wavelength = wave_diffraction_sampling_wavelength(bsdf);
+
   WaveAperture ap;
-  wave_aperture_setup(bsdf->width, bsdf->height, bsdf->wavelength, &ap);
+  wave_aperture_setup(bsdf->width, bsdf->height, sampling_wavelength, &ap);
   if (ap.num_edges == 0 || ap.recp_I <= 0.0f) {
     *pdf = 0.0f;
     *eval = zero_spectrum();
@@ -292,8 +338,10 @@ ccl_device int bsdf_wave_diffraction_sample(const ccl_private ShaderClosure *sc,
 
   *wo = normalize(bsdf->T * wo_proj.x + B * wo_proj.y + bsdf->N * wo_z);
   *pdf = ret.pdf;
-  /* f = pdf convention (wave_tracer), so eval/pdf = 1. */
-  *eval = make_spectrum(ret.pdf);
+  /* f = pdf convention (wave_tracer): at the sampled direction the value
+   * equals the pdf of the sampling distribution; in dispersion mode the
+   * per-channel values are the ASFs of the RGB primary wavelengths. */
+  *eval = wave_diffraction_eval_spectrum(bsdf, wi, *wo, pdf);
   return LABEL_TRANSMIT | LABEL_DIFFUSE;
 }
 

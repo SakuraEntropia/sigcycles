@@ -613,6 +613,7 @@ class WaveDiffractionBsdfNode : public BsdfNode {
   NODE_SOCKET_API(float, width)
   NODE_SOCKET_API(float, height)
   NODE_SOCKET_API(float, wavelength)
+  NODE_SOCKET_API(float, dispersion)
   NODE_SOCKET_API(float3, tangent)
 };
 
