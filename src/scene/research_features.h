@@ -35,6 +35,17 @@ static constexpr uint render_mode_bit(RenderMode mode)
   return 1u << (uint)mode;
 }
 
+/* Kernel flag bits for enabled research features (mirrors feature ids in
+ * the research_features string; consumed by kernel_data.integrator.research_flags). */
+static constexpr uint RESEARCH_FEATURE_WAVE_DIFFRACTION = 1u << 0;
+static constexpr uint RESEARCH_FEATURE_WAVELENGTH_SAMPLING = 1u << 1;
+static constexpr uint RESEARCH_FEATURE_POLARIZATION = 1u << 2;
+static constexpr uint RESEARCH_FEATURE_SVGF = 1u << 3;
+
+/* Parse a space-separated feature id list into a kernel flag bitmask.
+ * Unknown ids are ignored (validation happens in research_validate_features). */
+uint research_features_to_flags(const string &features);
+
 /* Look up feature info by id; nullptr when unknown. */
 const ResearchFeatureInfo *research_feature_find(const string &id);
 

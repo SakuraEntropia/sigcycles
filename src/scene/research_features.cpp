@@ -8,6 +8,7 @@
  * clearly instead of silently picking one. */
 
 #include "scene/research_features.h"
+#include <sstream>
 
 CCL_NAMESPACE_BEGIN
 
@@ -122,6 +123,29 @@ bool research_validate_features(const vector<string> &enabled, string *error)
     }
   }
   return true;
+}
+
+
+uint research_features_to_flags(const string &features)
+{
+  uint flags = 0;
+  std::istringstream iss(features);
+  string id;
+  while (iss >> id) {
+    if (id == "wave_diffraction") {
+      flags |= RESEARCH_FEATURE_WAVE_DIFFRACTION;
+    }
+    else if (id == "wavelength_sampling") {
+      flags |= RESEARCH_FEATURE_WAVELENGTH_SAMPLING;
+    }
+    else if (id == "polarization") {
+      flags |= RESEARCH_FEATURE_POLARIZATION;
+    }
+    else if (id == "svgf") {
+      flags |= RESEARCH_FEATURE_SVGF;
+    }
+  }
+  return flags;
 }
 
 CCL_NAMESPACE_END

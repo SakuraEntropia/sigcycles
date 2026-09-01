@@ -207,7 +207,9 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
     bsdf->width = fmaxf(width, 0.0f);
     bsdf->height = fmaxf(height, 0.0f);
     bsdf->wavelength = fmaxf(wavelength, 0.0f);
-    bsdf->dispersion = dispersion > 0.0f ? 1.0f : 0.0f;
+    /* dispersion: 0 = mono, 1 = three-band, 2 = multi-band wavelength
+     * sampling (Research Edition wavelength_sampling feature). */
+    bsdf->dispersion = (dispersion >= 2.0f) ? 2.0f : (dispersion > 0.0f ? 1.0f : 0.0f);
     bsdf->polarizer_angle = polarizer_angle;
     bsdf->polarized_input = polarized_input > 0.0f ? 1.0f : 0.0f;
     bsdf->slit_separation = fmaxf(slit_separation, 0.0f);
@@ -313,7 +315,23 @@ ccl_device_inline Spectrum wave_diffraction_eval_spectrum(
   const float pol = wave_polarizer_transmission(bsdf);
 
   Spectrum result;
-  if (bsdf->dispersion > 0.0f) {
+  if (bsdf->dispersion >= 2.0f) {
+    /* Research Edition wavelength_sampling: evaluate on a wider set of
+     * wavelengths for a smoother, closer-to-continuous spectrum than the
+     * three sRGB primaries. 7 bands across the visible range. */
+    const float wavelengths[7] = {450.0f, 480.0f, 510.0f, 540.0f,
+                                  570.0f, 600.0f, 630.0f};
+    float p[7];
+    for (int i = 0; i < 7; ++i) {
+      p[i] = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, wavelengths[i]);
+    }
+    /* Map 7 spectral samples to RGB via a simple luminance split. */
+    *pdf = p[3]; /* mid band drives sampling */
+    result = make_float3(0.5f * (p[0] + p[1] + p[2]),
+                         0.5f * (p[2] + p[3] + p[4]),
+                         0.5f * (p[4] + p[5] + p[6]));
+  }
+  else if (bsdf->dispersion > 0.0f) {
     float p[3];
     float wavelengths[3];
     wav_spectrum_three_band(wavelengths);

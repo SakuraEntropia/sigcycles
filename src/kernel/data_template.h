@@ -179,6 +179,8 @@ KERNEL_STRUCT_MEMBER(integrator, float, light_inv_rr_threshold)
  * (2.0 = default power heuristic, 1.0 = balance heuristic). */
 KERNEL_STRUCT_MEMBER(integrator, float, mis_exponent)
 KERNEL_STRUCT_MEMBER(integrator, int, svgf_temporal)
+KERNEL_STRUCT_MEMBER(integrator, int, render_mode)
+KERNEL_STRUCT_MEMBER(integrator, int, research_flags)
 /* Bounces. */
 KERNEL_STRUCT_MEMBER(integrator, int, min_bounce)
 KERNEL_STRUCT_MEMBER(integrator, int, max_bounce)

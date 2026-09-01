@@ -569,14 +569,22 @@ ccl_device
       const float polarizer_angle = stack_load(stack, bsdf_data.polarizer_angle);
       const float polarized_input = stack_load(stack, bsdf_data.polarized_input);
       const float slit_separation = stack_load(stack, bsdf_data.slit_separation);
+      /* Research Edition wavelength_sampling: upgrade three-band dispersion
+       * to multi-band wavelength sampling (2) when the feature is enabled
+       * and the node requests dispersion. */
+      const int research_flags = kernel_data.integrator.research_flags;
+      const float eff_dispersion =
+          ((research_flags & 2) && dispersion > 0.0f) ? 2.0f : dispersion;
+      const float eff_polarizer_angle =
+          (research_flags & 4) ? polarizer_angle : -1.0f;
       bsdf_wave_diffraction_setup(sd,
                                   N,
                                   T,
                                   width,
                                   height,
                                   wavelength,
-                                  dispersion,
-                                  polarizer_angle,
+                                  eff_dispersion,
+                                  eff_polarizer_angle,
                                   polarized_input,
                                   slit_separation,
                                   weight);

@@ -9,6 +9,7 @@
 #include "scene/camera.h"
 #include "scene/film.h"
 #include "scene/integrator.h"
+#include "scene/research_features.h"
 #include "scene/light.h"
 #include "scene/object.h"
 #include "scene/scene.h"
@@ -229,10 +230,25 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   /* Plus one so that a bounce of 0 indicates no global illumination, only direct illumination. */
   kintegrator->mis_exponent = (mis_exponent >= 1.0f) ? mis_exponent : 2.0f;
   kintegrator->svgf_temporal = svgf_temporal;
+  kintegrator->render_mode = (int)render_mode;
+  kintegrator->research_flags = research_features_to_flags(string(research_features));
+
+  /* Research Edition: REALTIME mode caps path depth for interactive
+   * latency; the cap applies on top of the user's bounce settings. */
+  const int realtime_max_bounce = 4;
+  const int realtime_max_diffuse = 2;
+  const int realtime_max_glossy = 3;
 
   kintegrator->min_bounce = min_bounce + 1;
   kintegrator->max_bounce = max_bounce + 1;
 
+  if (render_mode == RenderMode::REALTIME) {
+    kintegrator->max_bounce = min(kintegrator->max_bounce, realtime_max_bounce + 1);
+    kintegrator->max_diffuse_bounce = min(kintegrator->max_diffuse_bounce,
+                                          realtime_max_diffuse + 1);
+    kintegrator->max_glossy_bounce = min(kintegrator->max_glossy_bounce,
+                                         realtime_max_glossy + 1);
+  }
   kintegrator->max_diffuse_bounce = max_diffuse_bounce + 1;
   kintegrator->max_glossy_bounce = max_glossy_bounce + 1;
   kintegrator->max_transmission_bounce = max_transmission_bounce + 1;
