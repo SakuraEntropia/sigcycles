@@ -31,3 +31,39 @@
 3. **波动光学**：数学层已全移植（src/waveoptics）；下一步波长采样（解锁色散）到偏振 AOV、UTD 边衍射、薄膜、再到波束传输（长期）。
 4. **实时模式**：从 SVGF + OIDN v3 时域去噪起步（难度 1-2）；ReSTIR DI 中期（依赖 lamp 修复）。
 5. **环境问题**：独立构建 lamp 全黑 + environment_texture 品红（预先存在，非本项目引入）——lamp 修复是实时模式前提。
+
+
+---
+
+## Implementation & distribution status (2026-09)
+
+### Implemented (committed to this repo main)
+
+- Wave Diffraction BSDF (Fraunhofer single/double slit, wave_tracer port, Apache-2.0)
+- Wave Thin-Film BSDF (single dielectric film interference, iridescence)
+- MIS exponent (power-heuristic ^n, consumed in kernel)
+- Adaptive sampling (max-channel error)
+- research_flags kernel bitmask: render_mode behavior (REALTIME bounce caps),
+  wavelength_sampling (diffraction 7-band), polarization (polarizer Malus gate)
+- SVGF temporal (cycles.denoise forces temporally stable)
+
+### Distribution
+
+| File | Purpose |
+|---|---|
+| blender_5.3_research_full.patch | Full Blender 5.3 integration patch (nodes/RNA/sync/kernel); git apply to Blender source root |
+| addon/ | Standalone Blender addon (built-in kernel detection + OSL fallback + demo scene, zip-installable) |
+| cycles_research_edition.patch | Legacy cycles kernel patch (reference only) |
+
+### Blender 5.3 build
+
+1. Clone Blender main (Cycles 5.3.0), apply blender_5.3_research_full.patch
+2. cmake -S . -B build_mac -C build_files/cmake/config/blender_headless.cmake -DCMAKE_BUILD_TYPE=Release
+3. cmake --build build_mac --target blender -j 8  ->  build_mac/bin/Blender.app
+
+### Verified (built 8e5913cb9515)
+
+- Thin film: 60nm blue / 120nm orange-red / 200nm yellow (matches closure values)
+- Diffraction: 1cm slit white; 0.2mm slit near-black (physically correct)
+- Wavelength sampling: 7-band vs 3-band normal-incidence 31.9 vs 21.3 (numeric)
+- Polarization: 0deg passes / 90deg blocks / -1 disabled (Malus verified)

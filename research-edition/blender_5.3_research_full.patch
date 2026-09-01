@@ -1,0 +1,3988 @@
+From f769776b67e0a779d28ef51a732bd0fc1708af7b Mon Sep 17 00:00:00 2001
+From: Faputa <faputa@FaputadeMacBook-Air.local>
+Date: Tue, 1 Sep 2026 03:52:25 +0800
+Subject: [PATCH 1/2] Entro-Cycles Research Edition integration: wave closures,
+ research panel, MIS exponent, SVGF temporal, render mode
+
+---
+ .gitignore                                    |   1 +
+ intern/cycles/blender/addon/properties.py     |  27 ++
+ intern/cycles/blender/addon/ui.py             |  20 +
+ intern/cycles/blender/shader.cpp              |   8 +
+ intern/cycles/blender/sync.cpp                |   9 +
+ intern/cycles/kernel/CMakeLists.txt           |   2 +
+ intern/cycles/kernel/closure/bsdf.h           |  29 ++
+ .../kernel/closure/bsdf_wave_diffraction.h    | 419 ++++++++++++++++++
+ .../kernel/closure/bsdf_wave_thin_film.h      | 134 ++++++
+ intern/cycles/kernel/data_template.h          |   5 +
+ intern/cycles/kernel/film/adaptive_sampling.h |   5 +-
+ intern/cycles/kernel/light/sample.h           |   4 +-
+ intern/cycles/kernel/sample/mis.h             |  13 +
+ intern/cycles/kernel/svm/closure.h            |  48 ++
+ intern/cycles/kernel/svm/node_types.h         |  27 ++
+ intern/cycles/kernel/svm/types.h              |   2 +
+ intern/cycles/scene/integrator.cpp            |  15 +
+ intern/cycles/scene/integrator.h              |   8 +
+ intern/cycles/scene/research_features.cpp     | 127 ++++++
+ intern/cycles/scene/research_features.h       |  46 ++
+ intern/cycles/scene/shader_nodes.cpp          |  87 ++++
+ intern/cycles/scene/shader_nodes.h            |  26 ++
+ intern/cycles/util/CMakeLists.txt             |  14 +
+ intern/cycles/waveoptics/README.md            |  64 +++
+ intern/cycles/waveoptics/wav_cerf.h           |  95 ++++
+ intern/cycles/waveoptics/wav_complex.h        | 118 +++++
+ intern/cycles/waveoptics/wav_double_slit.cpp  | 102 +++++
+ intern/cycles/waveoptics/wav_fresnel.h        | 186 ++++++++
+ intern/cycles/waveoptics/wav_fsd.h            | 177 ++++++++
+ intern/cycles/waveoptics/wav_fsd_sampler.h    | 247 +++++++++++
+ intern/cycles/waveoptics/wav_fsd_tables.cpp   | 141 ++++++
+ intern/cycles/waveoptics/wav_fsd_tables.h     |  37 ++
+ intern/cycles/waveoptics/wav_gaussian.h       |  57 +++
+ intern/cycles/waveoptics/wav_math.h           | 100 +++++
+ intern/cycles/waveoptics/wav_spectrum.h       |  37 ++
+ intern/cycles/waveoptics/wav_stokes.h         | 264 +++++++++++
+ intern/cycles/waveoptics/wav_thin_film.h      | 110 +++++
+ intern/cycles/waveoptics/wav_utd.h            | 208 +++++++++
+ .../blenkernel/BKE_node_legacy_types.hh       |   2 +
+ .../blender/makesrna/intern/rna_nodetree.cc   |   2 +
+ source/blender/nodes/shader/CMakeLists.txt    |   2 +
+ .../nodes/shader/node_shader_register.cc      |   2 +
+ .../nodes/shader/node_shader_register.hh      |   2 +
+ .../node_shader_bsdf_wave_diffraction.cc      |  80 ++++
+ .../nodes/node_shader_bsdf_wave_thin_film.cc  |  61 +++
+ 45 files changed, 3167 insertions(+), 3 deletions(-)
+ create mode 100644 intern/cycles/kernel/closure/bsdf_wave_diffraction.h
+ create mode 100644 intern/cycles/kernel/closure/bsdf_wave_thin_film.h
+ create mode 100644 intern/cycles/scene/research_features.cpp
+ create mode 100644 intern/cycles/scene/research_features.h
+ create mode 100644 intern/cycles/waveoptics/README.md
+ create mode 100644 intern/cycles/waveoptics/wav_cerf.h
+ create mode 100644 intern/cycles/waveoptics/wav_complex.h
+ create mode 100644 intern/cycles/waveoptics/wav_double_slit.cpp
+ create mode 100644 intern/cycles/waveoptics/wav_fresnel.h
+ create mode 100644 intern/cycles/waveoptics/wav_fsd.h
+ create mode 100644 intern/cycles/waveoptics/wav_fsd_sampler.h
+ create mode 100644 intern/cycles/waveoptics/wav_fsd_tables.cpp
+ create mode 100644 intern/cycles/waveoptics/wav_fsd_tables.h
+ create mode 100644 intern/cycles/waveoptics/wav_gaussian.h
+ create mode 100644 intern/cycles/waveoptics/wav_math.h
+ create mode 100644 intern/cycles/waveoptics/wav_spectrum.h
+ create mode 100644 intern/cycles/waveoptics/wav_stokes.h
+ create mode 100644 intern/cycles/waveoptics/wav_thin_film.h
+ create mode 100644 intern/cycles/waveoptics/wav_utd.h
+ create mode 100644 source/blender/nodes/shader/nodes/node_shader_bsdf_wave_diffraction.cc
+ create mode 100644 source/blender/nodes/shader/nodes/node_shader_bsdf_wave_thin_film.cc
+
+diff --git a/.gitignore b/.gitignore
+index f6f66a4e48c..234581413cc 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -89,3 +89,4 @@ compile_commands.json
+ blendcache_*
+ *.blend1
+ *.blend2
++/build_mac/
+diff --git a/intern/cycles/blender/addon/properties.py b/intern/cycles/blender/addon/properties.py
+index e364fe657b7..bc01e2dac04 100644
+--- a/intern/cycles/blender/addon/properties.py
++++ b/intern/cycles/blender/addon/properties.py
+@@ -401,6 +401,33 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
+         default='CPU',
+         update=update_render_passes,
+     )
++
++    # Entro-Cycles Research Edition
++    research_render_mode: EnumProperty(
++        name="Research Render Mode",
++        description="Offline: full path tracing. Realtime: research fast path",
++        items=(
++            ('OFFLINE', 'Offline', 'Full-featured offline path tracing'),
++            ('REALTIME', 'Realtime', 'Research realtime fast path'),
++        ),
++        default='OFFLINE',
++    )
++    research_features: StringProperty(
++        name="Research Features",
++        description="Space-separated list of enabled research feature ids",
++        default="wave_diffraction wave_thin_film wavelength_sampling polarization",
++    )
++    research_mis_exponent: FloatProperty(
++        name="MIS Exponent",
++        description="Power heuristic exponent (2.0 = default power, 1.0 = balance)",
++        default=2.0,
++        min=1.0,
++    )
++    research_svgf_temporal: BoolProperty(
++        name="SVGF Temporal",
++        description="Enable SVGF temporal reprojection in the realtime path",
++        default=False,
++    )
+     shading_system: BoolProperty(
+         name="Open Shading Language",
+         description="Use Open Shading Language",
+diff --git a/intern/cycles/blender/addon/ui.py b/intern/cycles/blender/addon/ui.py
+index 65baadaa2b5..66f06fb39d9 100644
+--- a/intern/cycles/blender/addon/ui.py
++++ b/intern/cycles/blender/addon/ui.py
+@@ -611,6 +611,25 @@ class CYCLES_RENDER_PT_light_paths(CyclesButtonsPanel, Panel):
+         pass
+ 
+ 
++
++class CYCLES_RENDER_PT_research(CyclesButtonsPanel, Panel):
++    bl_label = "Research Edition"
++    bl_options = {'DEFAULT_CLOSED'}
++
++    def draw(self, context):
++        layout = self.layout
++        layout.use_property_split = True
++        layout.use_property_decorate = False
++
++        scene = context.scene
++        cscene = scene.cycles
++
++        col = layout.column(align=True)
++        col.prop(cscene, "research_render_mode")
++        col.prop(cscene, "research_features")
++        col.prop(cscene, "research_mis_exponent")
++        col.prop(cscene, "research_svgf_temporal")
++
+ class CYCLES_RENDER_PT_light_paths_max_bounces(CyclesButtonsPanel, Panel):
+     bl_label = "Max Bounces"
+     bl_parent_id = "CYCLES_RENDER_PT_light_paths"
+@@ -2580,6 +2599,7 @@ classes = (
+     CYCLES_RENDER_PT_sampling_lights,
+     CYCLES_RENDER_PT_sampling_advanced,
+     CYCLES_RENDER_PT_sampling_advanced_sample_subset,
++    CYCLES_RENDER_PT_research,
+     CYCLES_RENDER_PT_light_paths,
+     CYCLES_RENDER_PT_light_paths_max_bounces,
+     CYCLES_RENDER_PT_light_paths_clamping,
+diff --git a/intern/cycles/blender/shader.cpp b/intern/cycles/blender/shader.cpp
+index 220b35f3358..1118e2a646d 100644
+--- a/intern/cycles/blender/shader.cpp
++++ b/intern/cycles/blender/shader.cpp
+@@ -755,6 +755,14 @@ static ShaderNode *add_node(Scene *scene,
+   else if (b_node.is_type("ShaderNodeBsdfTranslucent"_ustr)) {
+     node = graph->create_node<TranslucentBsdfNode>();
+   }
++  else if (b_node.is_type("ShaderNodeWaveDiffraction"_ustr)) {
++    WaveDiffractionBsdfNode *wave = graph->create_node<WaveDiffractionBsdfNode>();
++    node = wave;
++  }
++  else if (b_node.is_type("ShaderNodeWaveThinFilm"_ustr)) {
++    WaveThinFilmBsdfNode *film = graph->create_node<WaveThinFilmBsdfNode>();
++    node = film;
++  }
+   else if (b_node.is_type("ShaderNodeBsdfTransparent"_ustr)) {
+     node = graph->create_node<TransparentBsdfNode>();
+   }
+diff --git a/intern/cycles/blender/sync.cpp b/intern/cycles/blender/sync.cpp
+index 4a4ddd2a1cf..ce33ddcc954 100644
+--- a/intern/cycles/blender/sync.cpp
++++ b/intern/cycles/blender/sync.cpp
+@@ -365,6 +365,15 @@ void BlenderSync::sync_integrator(blender::ViewLayer &b_view_layer,
+ 
+   Integrator *integrator = scene->integrator;
+ 
++  /* Research Edition: render mode, enabled research features, MIS exponent
++   * and SVGF temporal reprojection. */
++  const string render_mode = get_enum_identifier(cscene, "research_render_mode");
++  integrator->set_render_mode((render_mode == "realtime") ? RenderMode::REALTIME :
++                                                             RenderMode::OFFLINE);
++  integrator->set_research_features(ustring(get_string(cscene, "research_features")));
++  integrator->set_mis_exponent(get_float(cscene, "research_mis_exponent"));
++  integrator->set_svgf_temporal(get_boolean(cscene, "research_svgf_temporal"));
++
+   integrator->set_min_bounce(get_int(cscene, "min_light_bounces"));
+   integrator->set_max_bounce(get_int(cscene, "max_bounces"));
+ 
+diff --git a/intern/cycles/kernel/CMakeLists.txt b/intern/cycles/kernel/CMakeLists.txt
+index 0cd30da080c..6d87020aca8 100644
+--- a/intern/cycles/kernel/CMakeLists.txt
++++ b/intern/cycles/kernel/CMakeLists.txt
+@@ -34,6 +34,8 @@ set(SRC_KERNEL_CLOSURE_HEADERS
+   closure/bsdf_sheen.h
+   closure/bsdf_toon.h
+   closure/bsdf_transparent.h
++  closure/bsdf_wave_diffraction.h
++  closure/bsdf_wave_thin_film.h
+   closure/bsdf_util.h
+   closure/bsdf_ashikhmin_shirley.h
+   closure/bsdf_hair.h
+diff --git a/intern/cycles/kernel/closure/bsdf.h b/intern/cycles/kernel/closure/bsdf.h
+index 93f7fc1a204..2e382a75b97 100644
+--- a/intern/cycles/kernel/closure/bsdf.h
++++ b/intern/cycles/kernel/closure/bsdf.h
+@@ -14,6 +14,8 @@
+ #include "kernel/closure/bsdf_burley.h"
+ #include "kernel/closure/bsdf_sheen.h"
+ #include "kernel/closure/bsdf_transparent.h"
++#include "kernel/closure/bsdf_wave_diffraction.h"
++#include "kernel/closure/bsdf_wave_thin_film.h"
+ #include "kernel/closure/bsdf_ray_portal.h"
+ #include "kernel/closure/bsdf_ashikhmin_shirley.h"
+ #include "kernel/closure/bsdf_toon.h"
+@@ -224,6 +226,16 @@ ccl_device_inline int bsdf_sample(KernelGlobals kg,
+       *sampled_roughness = one_float2();
+       *eta = 1.0f;
+       break;
++    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
++      label = bsdf_wave_diffraction_sample(sc, Ng, sd->wi, rand_xy, eval, wo, pdf);
++      *sampled_roughness = one_float2();
++      *eta = 1.0f;
++      break;
++    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
++      label = bsdf_wave_thin_film_sample(sc, Ng, sd->wi, rand_xy, eval, wo, pdf);
++      *sampled_roughness = one_float2();
++      *eta = 1.0f;
++      break;
+     case CLOSURE_BSDF_TRANSPARENT_ID:
+       label = bsdf_transparent_sample(sc, Ng, sd->wi, eval, wo, pdf);
+       *sampled_roughness = zero_float2();
+@@ -368,6 +380,11 @@ ccl_device_inline void bsdf_roughness_eta(const ccl_private ShaderClosure *sc,
+       *roughness = one_float2();
+       *eta = 1.0f;
+       break;
++    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
++    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
++      *roughness = one_float2();
++      *eta = 1.0f;
++      break;
+     case CLOSURE_BSDF_TRANSPARENT_ID:
+     case CLOSURE_BSDF_RAY_PORTAL_ID:
+       *roughness = zero_float2();
+@@ -473,6 +490,12 @@ ccl_device_inline int bsdf_label(const KernelGlobals kg,
+     case CLOSURE_BSDF_ROUGH_TRANSLUCENT_ID:
+       label = LABEL_TRANSMIT | LABEL_DIFFUSE;
+       break;
++    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
++      label = LABEL_TRANSMIT | LABEL_DIFFUSE;
++      break;
++    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
++      label = LABEL_REFLECT | LABEL_DIFFUSE;
++      break;
+     case CLOSURE_BSDF_TRANSPARENT_ID:
+       label = LABEL_TRANSMIT | LABEL_TRANSPARENT;
+       break;
+@@ -591,6 +614,12 @@ ccl_device_inline
+     case CLOSURE_BSDF_TRANSLUCENT_ID:
+       eval = bsdf_translucent_eval(sc, sd->wi, wo, pdf);
+       break;
++    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
++      eval = bsdf_wave_diffraction_eval(sc, sd->wi, wo, pdf);
++      break;
++    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
++      eval = bsdf_wave_thin_film_eval(sc, sd->wi, wo, pdf);
++      break;
+     case CLOSURE_BSDF_TRANSPARENT_ID:
+       eval = bsdf_transparent_eval(sc, sd->wi, wo, pdf);
+       break;
+diff --git a/intern/cycles/kernel/closure/bsdf_wave_diffraction.h b/intern/cycles/kernel/closure/bsdf_wave_diffraction.h
+new file mode 100644
+index 00000000000..c520e680f18
+--- /dev/null
++++ b/intern/cycles/kernel/closure/bsdf_wave_diffraction.h
+@@ -0,0 +1,419 @@
++/* SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Wave Diffraction BSDF: Fraunhofer free-space diffraction of a rectangular
++ * slit aperture.
++ *
++ * The mathematics are ported from wave_tracer
++ * (https://github.com/ssteinberg/wave_tracer), Copyright Shlomi Steinberg,
++ * licensed under CC BY-NC 4.0. See src/waveoptics/README.md.
++ *
++ * The closure models the angular scattering function (ASF) of a thin screen
++ * with a rectangular slit: light transmitted through the slit is diffracted
++ * into a pattern that depends on the slit width/height and the wavelength.
++ * Following wave_tracer, the closure's value is defined as the probability
++ * density of the scattering distribution (f = pdf), so sampling is exact and
++ * energy is conserved by construction.
++ *
++ * GPU note: the lobe sampling tables are built on the host (CPU only). On GPU
++ * devices the closure evaluates to zero. See src/waveoptics/wav_fsd_sampler.h.
++ */
++
++#pragma once
++
++#include "kernel/closure/alloc.h"
++#include "kernel/types.h"
++
++#include "kernel/sample/mapping.h"
++
++#include "waveoptics/wav_fsd.h"
++#include "waveoptics/wav_fsd_sampler.h"
++#include "waveoptics/wav_spectrum.h"
++
++CCL_NAMESPACE_BEGIN
++
++using namespace waveoptics;
++
++struct WaveDiffractionBsdf {
++  SHADER_CLOSURE_BASE;
++  float3 T;            /* tangent on the surface (slit axis) */
++  float width;         /* slit width, scene units (meters) */
++  float height;        /* slit height, scene units (meters) */
++  float wavelength;    /* wavelength, nanometers (mono mode) */
++  float dispersion;    /* three-band dispersion: 0 = mono, 1 = RGB primaries */
++  float polarizer_angle; /* linear polarizer angle (radians); 0 = no polarizer */
++  float polarized_input; /* 1 = input linearly polarized along the tangent axis */
++  float slit_separation; /* double-slit center distance (meters); 0 = single slit */
++};
++
++static_assert(sizeof(ShaderClosure) >= sizeof(WaveDiffractionBsdf),
++              "WaveDiffractionBsdf is too large!");
++
++/* 1 mm expressed in scene units (Cycles scenes use meters). */
++ccl_device_inline float wave_fsd_unit()
++{
++  return 1e-3f;
++}
++
++/* Builds the two aperture edges of a rectangular slit (uniform field
++ * amplitude: a_b = 0, iab_2 = i), in the canonical mm-scaled frame used by
++ * the FSD mathematics. The edges are parallel to the tangent direction. */
++ccl_device_inline int wave_aperture_build(const float width,
++                                          const float height,
++                                          const float separation,
++                                          ccl_private wav_fsd_edge *edges)
++{
++  const float fsd_unit = wave_fsd_unit();
++  const float w_mm = width / fsd_unit;
++  const float h_mm = fmaxf(height, 0.0f) / fsd_unit;
++  const float s_mm = separation / fsd_unit;
++
++  if (w_mm <= 0.0f || h_mm <= 0.0f)
++    return 0;
++
++  const float half_w = w_mm * 0.5f;
++
++  if (s_mm <= 0.0f) {
++    edges[0].e = make_float2(0.0f, h_mm);
++    edges[0].v = make_float2(-half_w, 0.0f);
++    edges[0].a_b = wav_make_complex(0.0f, 0.0f);
++    edges[0].iab_2 = wav_make_complex(0.0f, 1.0f);
++    edges[1].e = make_float2(0.0f, -h_mm);
++    edges[1].v = make_float2(half_w, 0.0f);
++    edges[1].a_b = wav_make_complex(0.0f, 0.0f);
++    edges[1].iab_2 = wav_make_complex(0.0f, 1.0f);
++    return 2;
++  }
++
++  /* Double slit: slits centred at +/-s/2. */
++  const float half_s = s_mm * 0.5f;
++  edges[0].e = make_float2(0.0f, h_mm);
++  edges[0].v = make_float2(-half_s - half_w, 0.0f);
++  edges[0].a_b = wav_make_complex(0.0f, 0.0f);
++  edges[0].iab_2 = wav_make_complex(0.0f, 1.0f);
++  edges[1].e = make_float2(0.0f, -h_mm);
++  edges[1].v = make_float2(-half_s + half_w, 0.0f);
++  edges[1].a_b = wav_make_complex(0.0f, 0.0f);
++  edges[1].iab_2 = wav_make_complex(0.0f, 1.0f);
++  edges[2].e = make_float2(0.0f, h_mm);
++  edges[2].v = make_float2(half_s - half_w, 0.0f);
++  edges[2].a_b = wav_make_complex(0.0f, 0.0f);
++  edges[2].iab_2 = wav_make_complex(0.0f, 1.0f);
++  edges[3].e = make_float2(0.0f, -h_mm);
++  edges[3].v = make_float2(half_s + half_w, 0.0f);
++  edges[3].a_b = wav_make_complex(0.0f, 0.0f);
++  edges[3].iab_2 = wav_make_complex(0.0f, 1.0f);
++  return 4;
++}
++
++/* psi02: integrated 0-th order field amplitude over the aperture opening,
++ * via the same 8-point approximation as wave_tracer. */
++ccl_device_inline float wave_aperture_psi02(const ccl_private wav_fsd_edge *edges,
++                                            const int num_edges)
++{
++  const float p0s = wav_fsd_p0_sigma;
++  const float2 pts[8] = {
++      make_float2(-0.70710678f, -0.70710678f), make_float2(-1.0f, 0.0f),
++      make_float2(-0.70710678f, 0.70710678f), make_float2(0.0f, 1.0f),
++      make_float2(0.70710678f, 0.70710678f), make_float2(1.0f, 0.0f),
++      make_float2(0.70710678f, -0.70710678f), make_float2(0.0f, -1.0f)};
++
++  float psi02 = 0.0f;
++  for (int i = 0; i < 8; ++i) {
++    psi02 += wav_fsd_asf_unclamped(
++        edges, num_edges, make_float2(pts[i].x * 3.0f * p0s, pts[i].y * 3.0f * p0s));
++  }
++  return psi02 / 8.0f;
++}
++
++/* FSD aperture data of the slit. */
++struct WaveAperture {
++  wav_fsd_edge edges[4];
++  int num_edges;
++  float psi02;
++  float P0;
++  float recp_I;
++  float P0_pdf;
++  float edge_pdfs[4];
++  float scale; /* k * fsd_unit */
++};
++
++ccl_device_inline void wave_aperture_setup(const float width,
++                                           const float height,
++                                           const float separation,
++                                           const float wavelength_nm,
++                                           ccl_private WaveAperture *ap)
++{
++  const float lambda = wavelength_nm * 1e-9f;
++  const float k = WAV_TWO_PI_F / fmaxf(lambda, 1e-12f);
++  ap->scale = k * wave_fsd_unit();
++
++  ap->num_edges = wave_aperture_build(width, height, separation, ap->edges);
++  if (ap->num_edges == 0) {
++    ap->psi02 = 0.0f;
++    ap->P0 = 0.0f;
++    ap->recp_I = 0.0f;
++    ap->P0_pdf = 1.0f;
++    ap->edge_pdfs[0] = 0.0f;
++    ap->edge_pdfs[1] = 0.0f;
++    return;
++  }
++
++  ap->psi02 = wave_aperture_psi02(ap->edges, ap->num_edges);
++  ap->P0 = wav_fsd_p0(ap->psi02);
++
++  float total = ap->P0;
++  for (int i = 0; i < ap->num_edges; ++i) {
++    ap->edge_pdfs[i] = wav_fsd_pj(ap->edges[i]);
++    total += ap->edge_pdfs[i];
++  }
++  ap->recp_I = (total > 0.0f) ? 1.0f / total : 0.0f;
++  ap->P0_pdf = ap->P0 * ap->recp_I;
++  for (int i = 0; i < ap->num_edges; ++i) {
++    ap->edge_pdfs[i] *= ap->recp_I;
++  }
++}
++
++/* ASF of the aperture at the canonical coordinate xi. */
++ccl_device_inline float wave_aperture_asf(const ccl_private WaveAperture *ap, const float2 xi)
++{
++  return wav_fsd_asf(ap->edges, ap->num_edges, ap->psi02, xi);
++}
++
++/* Probability density (solid-angle measure, wave_tracer convention). */
++ccl_device_inline float wave_aperture_pdf(const ccl_private WaveAperture *ap, const float2 xi)
++{
++  return wave_aperture_asf(ap, xi) * ap->recp_I;
++}
++
++ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
++                                                   const float3 N,
++                                                   const float3 T,
++                                                   const float width,
++                                                   const float height,
++                                                   const float wavelength,
++                                                   const float dispersion,
++                                                   const float polarizer_angle,
++                                                   const float polarized_input,
++                                                   const float slit_separation,
++                                                   const Spectrum weight)
++{
++  ccl_private WaveDiffractionBsdf *bsdf = (ccl_private WaveDiffractionBsdf *)bsdf_alloc(
++      sd, sizeof(WaveDiffractionBsdf), weight);
++  if (bsdf) {
++    bsdf->N = N;
++    bsdf->T = normalize(T);
++    bsdf->width = fmaxf(width, 0.0f);
++    bsdf->height = fmaxf(height, 0.0f);
++    bsdf->wavelength = fmaxf(wavelength, 0.0f);
++    bsdf->dispersion = dispersion > 0.0f ? 1.0f : 0.0f;
++    bsdf->polarizer_angle = polarizer_angle;
++    bsdf->polarized_input = polarized_input > 0.0f ? 1.0f : 0.0f;
++    bsdf->slit_separation = fmaxf(slit_separation, 0.0f);
++    bsdf->type = CLOSURE_BSDF_WAVE_DIFFRACTION_ID;
++    sd->runtime_flag |= (SR_BSDF | SR_BSDF_HAS_EVAL | SR_BSDF_HAS_TRANSMISSION);
++  }
++}
++
++/* Direction into the aperture frame (z = N). */
++ccl_device_inline float3 wave_to_local(const ccl_private WaveDiffractionBsdf *bsdf,
++                                       const float3 d)
++{
++  const float3 B = cross(bsdf->N, bsdf->T);
++  return make_float3(dot(d, bsdf->T), dot(d, B), dot(d, bsdf->N));
++}
++
++/* Evaluates the diffraction pattern at a given wavelength (nm).
++ * Returns the density (f = pdf). */
++ccl_device_inline float wave_diffraction_eval_pdf_wavelength(
++    const ccl_private WaveDiffractionBsdf *bsdf,
++    const float3 wi,
++    const float3 wo,
++    const float wavelength_nm)
++{
++  WaveAperture ap;
++  wave_aperture_setup(bsdf->width, bsdf->height, bsdf->slit_separation, wavelength_nm, &ap);
++  if (ap.num_edges == 0 || ap.recp_I <= 0.0f)
++    return 0.0f;
++
++  const float s_in = dot(wi, bsdf->N);
++  const float s_out = dot(wo, bsdf->N);
++  /* The aperture transmits: incoming and outgoing on opposite sides. */
++  if (s_in * s_out >= 0.0f)
++    return 0.0f;
++
++  const float3 B = cross(bsdf->N, bsdf->T);
++  const float2 wi_proj = make_float2(dot(wi, bsdf->T), dot(wi, B));
++  const float2 wo_proj = make_float2(dot(wo, bsdf->T), dot(wo, B));
++
++  /* Straight-through (specular) direction: -wi. */
++  const float2 spec_proj = -wi_proj;
++  const float2 dev = wo_proj - spec_proj;
++
++  const float dev2 = dot(dev, dev);
++  if (dev2 >= 1.0f)
++    return 0.0f;
++
++  const float wo2 = dot(wo_proj, wo_proj);
++  if (wo2 >= 0.85f)
++    return 0.0f;
++
++  /* sin -> tan mapping of the deviation. */
++  const float2 zeta = dev * (1.0f / sqrtf(1.0f - dev2));
++  const float2 xi = make_float2(zeta.x * ap.scale, zeta.y * ap.scale);
++
++  /* Return the unnormalized ASF (direction-dependent scattering strength).
++   * The sampling pdf stays normalized (see wav_fsd_sample), so the ratio
++   * eval/pdf carries the full angular pattern into NEE (direct-light)
++   * evaluation, where the ASF shape is directly visible on the surface. */
++  return wave_aperture_asf(&ap, xi);
++}
++
++/* Wavelength used to drive direction sampling: in dispersion mode the middle
++ * (green primary) band, otherwise the user wavelength. The pdf reported by
++ * eval() must match this distribution. */
++ccl_device_inline float wave_diffraction_sampling_wavelength(
++    const ccl_private WaveDiffractionBsdf *bsdf)
++{
++  return (bsdf->dispersion > 0.0f) ? wav_spectrum_primary_green : bsdf->wavelength;
++}
++
++/* Mueller transmission factor of an ideal linear polarizer at angle theta.
++ * Input: unpolarized S=(1,0,0,0) or linearly polarized along the tangent
++ * axis S=(1,1,0,0). For polarized input this is Malus's law:
++ * S0_out = cos^2(theta). Unpolarized input passes half the power. */
++ccl_device_inline float wave_polarizer_transmission(const ccl_private WaveDiffractionBsdf *bsdf)
++{
++  /* polarizer_angle < 0 disables the polarizer. */
++  const float theta = bsdf->polarizer_angle;
++  if (theta < 0.0f) {
++    return 1.0f;
++  }
++  if (bsdf->polarized_input > 0.0f) {
++    const float c = cosf(2.0f * theta);
++    return 0.5f * (1.0f + c); /* cos^2(theta) */
++  }
++  return 0.5f;
++}
++
++/* Evaluates the diffraction pattern and returns the spectrum.
++ * Mono mode: single wavelength -> flat spectrum.
++ * Dispersion mode: three-band evaluation at the sRGB primaries; the R/G/B
++ * channels carry the ASF of the red/green/blue primary wavelengths, so the
++ * pattern scale differs per channel and white light shows dispersion.
++ * *pdf is the density of the sampling distribution (green band in dispersion
++ * mode), kept consistent with bsdf_wave_diffraction_sample(). */
++ccl_device_inline Spectrum wave_diffraction_eval_spectrum(
++    const ccl_private WaveDiffractionBsdf *bsdf,
++    const float3 wi,
++    const float3 wo,
++    ccl_private float *pdf)
++{
++  const float pol = wave_polarizer_transmission(bsdf);
++
++  Spectrum result;
++  if (bsdf->dispersion > 0.0f) {
++    float p[3];
++    float wavelengths[3];
++    wav_spectrum_three_band(wavelengths);
++    for (int i = 0; i < 3; ++i) {
++      p[i] = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, wavelengths[i]);
++    }
++    *pdf = p[1]; /* green band drives sampling */
++    result = make_float3(p[0], p[1], p[2]);
++  }
++  else {
++    const float p = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, bsdf->wavelength);
++    *pdf = p;
++    result = make_spectrum(p);
++  }
++  return make_float3(result.x * pol, result.y * pol, result.z * pol);
++}
++
++ccl_device Spectrum bsdf_wave_diffraction_eval(const ccl_private ShaderClosure *sc,
++                                               const float3 wi,
++                                               const float3 wo,
++                                               ccl_private float *pdf)
++{
++  const ccl_private WaveDiffractionBsdf *bsdf = (const ccl_private WaveDiffractionBsdf *)sc;
++  return wave_diffraction_eval_spectrum(bsdf, wi, wo, pdf);
++}
++
++ccl_device int bsdf_wave_diffraction_sample(const ccl_private ShaderClosure *sc,
++                                            const float3 Ng,
++                                            const float3 wi,
++                                            const float2 rand,
++                                            ccl_private Spectrum *eval,
++                                            ccl_private float3 *wo,
++                                            ccl_private float *pdf)
++{
++  const ccl_private WaveDiffractionBsdf *bsdf = (const ccl_private WaveDiffractionBsdf *)sc;
++
++  /* Direction sampling uses the effective sampling wavelength (green band in
++   * dispersion mode), matching the pdf reported by eval(). */
++  const float sampling_wavelength = wave_diffraction_sampling_wavelength(bsdf);
++
++  WaveAperture ap;
++  wave_aperture_setup(bsdf->width, bsdf->height, bsdf->slit_separation, sampling_wavelength, &ap);
++  if (ap.num_edges == 0 || ap.recp_I <= 0.0f) {
++    *pdf = 0.0f;
++    *eval = zero_spectrum();
++    return LABEL_NONE;
++  }
++
++  /* Importance sampling of the transmission hemisphere following the ASF
++   * (rejection sampling), matching the wave_tracer f = pdf convention. The
++   * closure value at the sampled direction is the ASF itself, so energy is
++   * transported correctly to receiver surfaces through the aperture. */
++  wav_fsd_aperture sapa;
++  sapa.edges = ap.edges;
++  sapa.num_edges = ap.num_edges;
++  sapa.psi02 = ap.psi02;
++  sapa.P0 = ap.P0;
++  sapa.recp_I = ap.recp_I;
++  sapa.P0_pdf = ap.P0_pdf;
++  sapa.edge_pdfs = ap.edge_pdfs;
++
++  const uint32_t seed = __float_as_uint(rand.x) ^ (__float_as_uint(rand.y) * 2654435761u);
++
++  wav_fsd_sample_ret ret;
++  if (!wav_fsd_sample(sapa, seed, &ret)) {
++    *pdf = 0.0f;
++    *eval = zero_spectrum();
++    return LABEL_NONE;
++  }
++
++  const float2 zeta = make_float2(ret.xi.x / ap.scale, ret.xi.y / ap.scale);
++
++  /* tan -> sin mapping of the deviation. */
++  const float zeta2 = dot(zeta, zeta);
++  const float2 dev = zeta * (1.0f / sqrtf(1.0f + zeta2));
++
++  const float3 B = cross(bsdf->N, bsdf->T);
++  const float2 wi_proj = make_float2(dot(wi, bsdf->T), dot(wi, B));
++  const float2 spec_proj = -wi_proj;
++  const float2 wo_proj = spec_proj + dev;
++
++  const float wo2 = dot(wo_proj, wo_proj);
++  if (wo2 >= 0.85f) {
++    *pdf = 0.0f;
++    *eval = zero_spectrum();
++    return LABEL_NONE;
++  }
++
++  const float s_in = dot(wi, bsdf->N);
++  const float wo_z = (s_in >= 0.0f ? -1.0f : 1.0f) * sqrtf(1.0f - wo2);
++
++  *wo = normalize(bsdf->T * wo_proj.x + B * wo_proj.y + bsdf->N * wo_z);
++  /* Direction sampling follows the ASF (importance sampling). The reported
++   * pdf is the true sampling density, and eval returns the ASF itself
++   * (f = pdf convention, wave_tracer), so energy is transported correctly
++   * through the aperture to receiver surfaces. */
++  *pdf = ret.pdf;
++  *eval = wave_diffraction_eval_spectrum(bsdf, wi, *wo, pdf);
++  *pdf = ret.pdf;
++  return LABEL_TRANSMIT | LABEL_DIFFUSE;
++}
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/kernel/closure/bsdf_wave_thin_film.h b/intern/cycles/kernel/closure/bsdf_wave_thin_film.h
+new file mode 100644
+index 00000000000..346934b566a
+--- /dev/null
++++ b/intern/cycles/kernel/closure/bsdf_wave_thin_film.h
+@@ -0,0 +1,134 @@
++/* SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Thin-film interference BSDF closure.
++ *
++ * A diffuse-like reflector whose reflectance is computed from a single
++ * dielectric thin film (thickness d, film index n1) between an ambient
++ * medium (n0) and a substrate (n2). The wavelength-dependent Airy
++ * reflectance (see waveoptics/wav_thin_film.h) makes the surface
++ * iridescent under broadband light.
++ *
++ * The closure samples the reflection hemisphere with a cosine-weighted
++ * distribution and evaluates the thin-film reflectance at the incoming
++ * angle on the three sRGB primary wavelengths (nm converted to metres),
++ * producing wavelength-dependent colours. */
++
++#pragma once
++
++#include "kernel/closure/alloc.h"
++#include "kernel/sample/mapping.h"
++#include "kernel/svm/types.h"
++
++#include "waveoptics/wav_spectrum.h"
++#include "waveoptics/wav_thin_film.h"
++
++CCL_NAMESPACE_BEGIN
++
++using namespace waveoptics;
++
++/* Thin-film interference BSDF. */
++struct WaveThinFilmBsdf {
++  SHADER_CLOSURE_BASE;
++  float n0;        /* ambient index */
++  float n1;        /* film index */
++  float n2;        /* substrate index */
++  float thickness; /* film thickness (m) */
++};
++
++static_assert(sizeof(WaveThinFilmBsdf) <= sizeof(ShaderClosure),
++              "WaveThinFilmBsdf must fit in ShaderClosure");
++
++/* 3-band evaluation of the thin-film reflectance at the incoming angle. */
++ccl_device Spectrum bsdf_wave_thin_film_eval(const ccl_private ShaderClosure *sc,
++                                             const float3 wi,
++                                             const float3 wo,
++                                             ccl_private float *pdf)
++{
++  const ccl_private WaveThinFilmBsdf *bsdf = (const ccl_private WaveThinFilmBsdf *)sc;
++
++  /* Reflection hemisphere: both directions on the same side of the surface. */
++  const float cosi = dot(wi, bsdf->N);
++  const float coso = dot(wo, bsdf->N);
++  if (cosi <= 0.0f || coso <= 0.0f) {
++    *pdf = 0.0f;
++    return zero_spectrum();
++  }
++
++  float wavelengths[3];
++  wav_spectrum_three_band(wavelengths);
++  /* The spectrum bands are stored in nm; convert to metres. */
++  wavelengths[0] *= 1e-9f;
++  wavelengths[1] *= 1e-9f;
++  wavelengths[2] *= 1e-9f;
++
++  Spectrum result;
++  result.x = wav_thin_film_reflectance_unpolarized(
++      bsdf->n0, bsdf->n1, bsdf->n2, bsdf->thickness, wavelengths[0], cosi);
++  result.y = wav_thin_film_reflectance_unpolarized(
++      bsdf->n0, bsdf->n1, bsdf->n2, bsdf->thickness, wavelengths[1], cosi);
++  result.z = wav_thin_film_reflectance_unpolarized(
++      bsdf->n0, bsdf->n1, bsdf->n2, bsdf->thickness, wavelengths[2], cosi);
++
++  /* Lambertian factor: BRDF = albedo/pi, pdf = cos/pi. */
++  result *= M_1_PI_F;
++  *pdf = coso * M_1_PI_F;
++  return result;
++}
++
++ccl_device int bsdf_wave_thin_film_sample(const ccl_private ShaderClosure *sc,
++                                          const float3 Ng,
++                                          const float3 wi,
++                                          const float2 rand,
++                                          ccl_private Spectrum *eval,
++                                          ccl_private float3 *wo,
++                                          ccl_private float *pdf)
++{
++  const ccl_private WaveThinFilmBsdf *bsdf = (const ccl_private WaveThinFilmBsdf *)sc;
++
++  /* Cosine-weighted hemisphere sampling around the normal. */
++  const float2 disk = sample_uniform_disk(rand);
++  const float3 T = normalize(make_float3(-bsdf->N.y, bsdf->N.x, 0.0f));
++  const float3 B = cross(bsdf->N, T);
++  const float z = sqrtf(fmaxf(0.0f, 1.0f - dot(disk, disk)));
++  *wo = normalize(T * disk.x + B * disk.y + bsdf->N * z);
++  if (!isfinite(wo->x) || !isfinite(wo->y) || !isfinite(wo->z)) {
++    /* Degenerate tangent for axis-aligned normals: fall back to +x. */
++    *wo = normalize(make_float3(disk.x, disk.y, z));
++  }
++
++  const float coso = dot(*wo, bsdf->N);
++  if (coso <= 0.0f) {
++    *pdf = 0.0f;
++    *eval = zero_spectrum();
++    return LABEL_NONE;
++  }
++
++  *pdf = coso * M_1_PI_F;
++  *eval = bsdf_wave_thin_film_eval(sc, wi, *wo, pdf);
++  return LABEL_REFLECT | LABEL_DIFFUSE;
++}
++
++ccl_device_inline void bsdf_wave_thin_film_setup(ccl_private ShaderData *sd,
++                                                 const float3 N,
++                                                 const float n0,
++                                                 const float n1,
++                                                 const float n2,
++                                                 const float thickness,
++                                                 const Spectrum weight)
++{
++  ccl_private WaveThinFilmBsdf *bsdf = (ccl_private WaveThinFilmBsdf *)bsdf_alloc(
++      sd, sizeof(WaveThinFilmBsdf), weight);
++  if (bsdf) {
++    bsdf->N = N;
++    bsdf->n0 = fmaxf(n0, 1.0f);
++    bsdf->n1 = fmaxf(n1, 1.0f);
++    bsdf->n2 = fmaxf(n2, 1.0f);
++    bsdf->thickness = fmaxf(thickness, 0.0f) * 1e-9f; /* nm to m */
++    bsdf->type = CLOSURE_BSDF_WAVE_THIN_FILM_ID;
++    sd->runtime_flag |= (SR_BSDF | SR_BSDF_HAS_EVAL);
++  }
++}
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/kernel/data_template.h b/intern/cycles/kernel/data_template.h
+index 6088415a916..046e92f93c5 100644
+--- a/intern/cycles/kernel/data_template.h
++++ b/intern/cycles/kernel/data_template.h
+@@ -175,6 +175,11 @@ KERNEL_STRUCT_MEMBER(integrator, int, num_distribution)
+ KERNEL_STRUCT_MEMBER(integrator, float, distribution_pdf_triangles)
+ KERNEL_STRUCT_MEMBER(integrator, float, distribution_pdf_lights)
+ KERNEL_STRUCT_MEMBER(integrator, float, light_inv_rr_threshold)
++/* Research Edition: power-heuristic exponent for BSDF/light MIS
++ * (2.0 = default power heuristic, 1.0 = balance heuristic). */
++KERNEL_STRUCT_MEMBER(integrator, float, mis_exponent)
++KERNEL_STRUCT_MEMBER(integrator, int, svgf_temporal)
++KERNEL_STRUCT_MEMBER(integrator, int, render_mode)
+ /* Bounces. */
+ KERNEL_STRUCT_MEMBER(integrator, int, min_bounce)
+ KERNEL_STRUCT_MEMBER(integrator, int, max_bounce)
+diff --git a/intern/cycles/kernel/film/adaptive_sampling.h b/intern/cycles/kernel/film/adaptive_sampling.h
+index 07b9e68d659..6eb63861663 100644
+--- a/intern/cycles/kernel/film/adaptive_sampling.h
++++ b/intern/cycles/kernel/film/adaptive_sampling.h
+@@ -60,7 +60,10 @@ ccl_device bool film_adaptive_sampling_convergence_check(KernelGlobals kg,
+ 
+   /* The per pixel error as seen in section 2.1 of
+    * "A hierarchical automatic stopping condition for Monte Carlo global illumination" */
+-  const float error_difference = (fabsf(I.x - A.x) + fabsf(I.y - A.y) + fabsf(I.z - A.z)) *
++  /* Research Edition: use the maximum channel error instead of the sum, which is
++   * more robust for strongly coloured pixels (the sum over-weights bright hues). */
++  const float error_difference = fmaxf(fabsf(I.x - A.x),
++                                       fmaxf(fabsf(I.y - A.y), fabsf(I.z - A.z))) *
+                                  intensity_scale;
+   const float intensity = (I.x + I.y + I.z) * intensity_scale;
+ 
+diff --git a/intern/cycles/kernel/light/sample.h b/intern/cycles/kernel/light/sample.h
+index 2ff81df2ee7..a4a006a047f 100644
+--- a/intern/cycles/kernel/light/sample.h
++++ b/intern/cycles/kernel/light/sample.h
+@@ -338,7 +338,7 @@ ccl_device_inline float light_sample_mis_weight_forward(KernelGlobals kg,
+ #else
+   (void)kg;
+ #endif
+-  return power_heuristic(forward_pdf, nee_pdf);
++  return power_heuristic_pow(forward_pdf, nee_pdf, kernel_data.integrator.mis_exponent);
+ }
+ 
+ ccl_device_inline float light_sample_mis_weight_nee(KernelGlobals kg,
+@@ -358,7 +358,7 @@ ccl_device_inline float light_sample_mis_weight_nee(KernelGlobals kg,
+ #else
+   (void)kg;
+ #endif
+-  return power_heuristic(nee_pdf, forward_pdf);
++  return power_heuristic_pow(nee_pdf, forward_pdf, kernel_data.integrator.mis_exponent);
+ }
+ 
+ /* Next event estimation sampling.
+diff --git a/intern/cycles/kernel/sample/mis.h b/intern/cycles/kernel/sample/mis.h
+index eb48036221f..b726221964b 100644
+--- a/intern/cycles/kernel/sample/mis.h
++++ b/intern/cycles/kernel/sample/mis.h
+@@ -28,6 +28,19 @@ ccl_device float power_heuristic(const float a, const float b)
+   return (a * a) / (a * a + b * b);
+ }
+ 
++/* Generalized power heuristic with a configurable exponent.
++ * exponent 2.0 = power heuristic (default), 1.0 = balance heuristic. */
++ccl_device float power_heuristic_pow(const float a, const float b, const float exponent)
++{
++  if (exponent == 2.0f) {
++    return power_heuristic(a, b);
++  }
++  const float pa = powf(fmaxf(a, 0.0f), exponent);
++  const float pb = powf(fmaxf(b, 0.0f), exponent);
++  const float sum = pa + pb;
++  return (sum > 0.0f) ? pa / sum : 0.0f;
++}
++
+ ccl_device float power_heuristic_3(const float a, const float b, float c)
+ {
+   return (a * a) / (a * a + b * b + c * c);
+diff --git a/intern/cycles/kernel/svm/closure.h b/intern/cycles/kernel/svm/closure.h
+index d7ef193ad75..dff8529d620 100644
+--- a/intern/cycles/kernel/svm/closure.h
++++ b/intern/cycles/kernel/svm/closure.h
+@@ -51,6 +51,12 @@ ccl_device_inline int svm_node_closure_bsdf_skip(int offset, const uint type)
+     case CLOSURE_BSDF_TRANSPARENT_ID:
+       offset += sizeof(SVMNodeSimpleBsdfData) / sizeof(uint);
+       break;
++    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID:
++      offset += sizeof(SVMNodeWaveDiffractionBsdfData) / sizeof(uint);
++      break;
++    case CLOSURE_BSDF_WAVE_THIN_FILM_ID:
++      offset += sizeof(SVMNodeWaveThinFilmBsdfData) / sizeof(uint);
++      break;
+     case CLOSURE_BSDF_RAY_PORTAL_ID:
+       offset += sizeof(SVMNodeRayPortalBsdfData) / sizeof(uint);
+       break;
+@@ -485,6 +491,48 @@ ccl_device
+       bsdf_translucent_setup(sd, maybe_ensure_valid_specular_reflection(sd, N), weight);
+       break;
+     }
++    case CLOSURE_BSDF_WAVE_DIFFRACTION_ID: {
++      const ccl_global SVMNodeWaveDiffractionBsdfData &bsdf_data =
++          svm_node_get<SVMNodeWaveDiffractionBsdfData>(kg, &offset);
++      float3 N = stack_load_float3_default(stack, bsdf_data.normal_offset, sd->N);
++      N = safe_normalize_fallback(N, sd->N);
++      const float3 T = stack_load_float3_default(stack, bsdf_data.tangent_offset, sd->dPdu);
++
++      const Spectrum weight = closure_weight * mix_weight;
++      const float width = stack_load(stack, bsdf_data.width);
++      const float height = stack_load(stack, bsdf_data.height);
++      const float wavelength = stack_load(stack, bsdf_data.wavelength);
++      const float dispersion = stack_load(stack, bsdf_data.dispersion);
++      const float polarizer_angle = stack_load(stack, bsdf_data.polarizer_angle);
++      const float polarized_input = stack_load(stack, bsdf_data.polarized_input);
++      const float slit_separation = stack_load(stack, bsdf_data.slit_separation);
++      bsdf_wave_diffraction_setup(sd,
++                                  N,
++                                  T,
++                                  width,
++                                  height,
++                                  wavelength,
++                                  dispersion,
++                                  polarizer_angle,
++                                  polarized_input,
++                                  slit_separation,
++                                  weight);
++      break;
++    }
++    case CLOSURE_BSDF_WAVE_THIN_FILM_ID: {
++      const ccl_global SVMNodeWaveThinFilmBsdfData &bsdf_data =
++          svm_node_get<SVMNodeWaveThinFilmBsdfData>(kg, &offset);
++      float3 N = stack_load_float3_default(stack, bsdf_data.normal_offset, sd->N);
++      N = safe_normalize_fallback(N, sd->N);
++
++      const Spectrum weight = closure_weight * mix_weight;
++      const float n0 = stack_load(stack, bsdf_data.n0);
++      const float n1 = stack_load(stack, bsdf_data.n1);
++      const float n2 = stack_load(stack, bsdf_data.n2);
++      const float thickness = stack_load(stack, bsdf_data.thickness);
++      bsdf_wave_thin_film_setup(sd, N, n0, n1, n2, thickness, weight);
++      break;
++    }
+     case CLOSURE_BSDF_TRANSPARENT_ID: {
+       svm_node_get<SVMNodeSimpleBsdfData>(kg, &offset);
+       const Spectrum weight = closure_weight * mix_weight;
+diff --git a/intern/cycles/kernel/svm/node_types.h b/intern/cycles/kernel/svm/node_types.h
+index 7c1e8ef7252..cd2dfa198c9 100644
+--- a/intern/cycles/kernel/svm/node_types.h
++++ b/intern/cycles/kernel/svm/node_types.h
+@@ -1041,6 +1041,33 @@ struct SVMNodeDiffuseBsdfData {
+ static_assert(alignof(SVMNodeDiffuseBsdfData) <= alignof(uint));
+ static_assert(sizeof(SVMNodeDiffuseBsdfData) % sizeof(uint) == 0);
+ 
++/* Wave Diffraction BSDF. */
++struct SVMNodeWaveDiffractionBsdfData {
++  SVMInputFloat width;
++  SVMInputFloat height;
++  SVMInputFloat wavelength;
++  SVMInputFloat dispersion;
++  SVMInputFloat polarizer_angle;
++  SVMInputFloat polarized_input;
++  SVMInputFloat slit_separation;
++  SVMStackOffset normal_offset;
++  SVMStackOffset tangent_offset;
++  uint8_t _pad[2];
++};
++static_assert(alignof(SVMNodeWaveDiffractionBsdfData) <= alignof(uint));
++static_assert(sizeof(SVMNodeWaveDiffractionBsdfData) % sizeof(uint) == 0);
++
++struct SVMNodeWaveThinFilmBsdfData {
++  SVMInputFloat n0;
++  SVMInputFloat n1;
++  SVMInputFloat n2;
++  SVMInputFloat thickness;
++  SVMStackOffset normal_offset;
++  uint8_t _pad[3];
++};
++static_assert(alignof(SVMNodeWaveThinFilmBsdfData) <= alignof(uint));
++static_assert(sizeof(SVMNodeWaveThinFilmBsdfData) % sizeof(uint) == 0);
++
+ /* Toon BSDF. */
+ struct SVMNodeToonBsdfData {
+   SVMInputFloat size;
+diff --git a/intern/cycles/kernel/svm/types.h b/intern/cycles/kernel/svm/types.h
+index b7d77da20a2..649a8b5257b 100644
+--- a/intern/cycles/kernel/svm/types.h
++++ b/intern/cycles/kernel/svm/types.h
+@@ -475,6 +475,8 @@ enum ClosureType : uint {
+   CLOSURE_BSDF_DIFFUSE_RAMP_ID,
+   CLOSURE_BSDF_SHEEN_ID,
+   CLOSURE_BSDF_DIFFUSE_TOON_ID,
++  CLOSURE_BSDF_WAVE_DIFFRACTION_ID,
++  CLOSURE_BSDF_WAVE_THIN_FILM_ID,
+   CLOSURE_BSDF_TRANSLUCENT_ID,
+ 
+   /* Glossy */
+diff --git a/intern/cycles/scene/integrator.cpp b/intern/cycles/scene/integrator.cpp
+index 9a589b64dd6..cfb6c317833 100644
+--- a/intern/cycles/scene/integrator.cpp
++++ b/intern/cycles/scene/integrator.cpp
+@@ -53,6 +53,15 @@ NODE_DEFINE(Integrator)
+ {
+   NodeType *type = NodeType::add("integrator", create);
+ 
++  /* Research Edition: render mode and enabled research features. */
++  static NodeEnum render_mode_enum;
++  render_mode_enum.insert("offline", (int)RenderMode::OFFLINE);
++  render_mode_enum.insert("realtime", (int)RenderMode::REALTIME);
++  SOCKET_ENUM(render_mode, "Render Mode", render_mode_enum, (int)RenderMode::OFFLINE);
++  SOCKET_STRING(research_features, "Research Features", ustring());
++  SOCKET_FLOAT(mis_exponent, "MIS Exponent", 2.0f);
++  SOCKET_BOOLEAN(svgf_temporal, "SVGF Temporal", false);
++
+   SOCKET_INT(min_bounce, "Min Bounce", 0);
+   SOCKET_INT(max_bounce, "Max Bounce", 7);
+ 
+@@ -217,6 +226,12 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
+ 
+   /* integrator parameters */
+ 
++  /* Research Edition: power-heuristic exponent (2.0 = power, 1.0 = balance),
++   * SVGF temporal reprojection toggle and render mode. */
++  kintegrator->mis_exponent = (mis_exponent >= 1.0f) ? mis_exponent : 2.0f;
++  kintegrator->svgf_temporal = svgf_temporal;
++  kintegrator->render_mode = (int)render_mode;
++
+   /* Plus one so that a bounce of 0 indicates no global illumination, only direct illumination. */
+   kintegrator->min_bounce = min_bounce + 1;
+   kintegrator->max_bounce = max_bounce + 1;
+diff --git a/intern/cycles/scene/integrator.h b/intern/cycles/scene/integrator.h
+index 4aa34489b96..47bc0e9e07e 100644
+--- a/intern/cycles/scene/integrator.h
++++ b/intern/cycles/scene/integrator.h
+@@ -10,6 +10,7 @@
+ #include "graph/node.h"
+ #include "integrator/adaptive_sampling.h"
+ #include "integrator/guiding.h"
++#include "scene/research_features.h"
+ 
+ CCL_NAMESPACE_BEGIN
+ 
+@@ -40,6 +41,13 @@ class Integrator : public Node {
+  public:
+   NODE_DECLARE
+ 
++  /* Research Edition: rendering mode (offline / realtime) and the set of
++   * explicitly enabled research features (space-separated ids). */
++  NODE_SOCKET_API(RenderMode, render_mode)
++  NODE_SOCKET_API(ustring, research_features)
++  NODE_SOCKET_API(float, mis_exponent)
++  NODE_SOCKET_API(bool, svgf_temporal)
++
+   NODE_SOCKET_API(int, min_bounce)
+   NODE_SOCKET_API(int, max_bounce)
+ 
+diff --git a/intern/cycles/scene/research_features.cpp b/intern/cycles/scene/research_features.cpp
+new file mode 100644
+index 00000000000..aab4acd8928
+--- /dev/null
++++ b/intern/cycles/scene/research_features.cpp
+@@ -0,0 +1,127 @@
++/* SPDX-FileCopyrightText: 2025 Entro-Cycles Research Edition
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Research feature registry and validation (spec sections 5-7).
++ * Every research feature declares: supported render modes, dependencies,
++ * conflicts and experimental status. Enabling conflicting features fails
++ * clearly instead of silently picking one. */
++
++#include "scene/research_features.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace {
++
++const ResearchFeatureInfo feature_registry[] = {
++    /* Built-in, always available. */
++    {"path_tracing",
++     render_mode_bit(RenderMode::OFFLINE) | render_mode_bit(RenderMode::REALTIME),
++     {nullptr},
++     {"wave_transport", nullptr},
++     ResearchFeatureStatus::STABLE},
++    {"path_guiding",
++     render_mode_bit(RenderMode::OFFLINE),
++     {nullptr},
++     {nullptr},
++     ResearchFeatureStatus::STABLE},
++    {"adaptive_sampling",
++     render_mode_bit(RenderMode::OFFLINE),
++     {nullptr},
++     {nullptr},
++     ResearchFeatureStatus::STABLE},
++    {"mnee_caustics",
++     render_mode_bit(RenderMode::OFFLINE),
++     {nullptr},
++     {nullptr},
++     ResearchFeatureStatus::STABLE},
++
++    /* Wave optics track (implemented). */
++    {"wave_diffraction",
++     render_mode_bit(RenderMode::OFFLINE),
++     {nullptr},
++     {nullptr},
++     ResearchFeatureStatus::EXPERIMENTAL},
++
++    /* Planned / research track. */
++    {"wave_transport",
++     render_mode_bit(RenderMode::OFFLINE),
++     {"wave_diffraction", nullptr},
++     {"path_tracing", "restir_di", nullptr},
++     ResearchFeatureStatus::RESEARCH},
++    {"wavelength_sampling",
++     render_mode_bit(RenderMode::OFFLINE),
++     {nullptr},
++     {nullptr},
++     ResearchFeatureStatus::EXPERIMENTAL},
++    {"polarization",
++     render_mode_bit(RenderMode::OFFLINE),
++     {"wavelength_sampling", nullptr},
++     {nullptr},
++     ResearchFeatureStatus::EXPERIMENTAL},
++    {"restir_di",
++     render_mode_bit(RenderMode::OFFLINE) | render_mode_bit(RenderMode::REALTIME),
++     {nullptr},
++     {"wave_transport", nullptr},
++     ResearchFeatureStatus::RESEARCH},
++    {"svgf",
++     render_mode_bit(RenderMode::REALTIME),
++     {nullptr},
++     {nullptr},
++     ResearchFeatureStatus::EXPERIMENTAL},
++};
++
++}  // namespace
++
++const ResearchFeatureInfo *research_feature_find(const string &id)
++{
++  for (const ResearchFeatureInfo &info : feature_registry) {
++    if (id == info.id) {
++      return &info;
++    }
++  }
++  return nullptr;
++}
++
++bool research_validate_features(const vector<string> &enabled, string *error)
++{
++  for (const string &id : enabled) {
++    const ResearchFeatureInfo *info = research_feature_find(id);
++    if (info == nullptr) {
++      *error = string_printf("Unknown research feature \"%s\"", id.c_str());
++      return false;
++    }
++
++    /* Dependencies. */
++    for (const char *dep : info->dependencies) {
++      if (dep == nullptr) {
++        break;
++      }
++      const string dep_id(dep);
++      const bool has_dep = std::find(enabled.begin(), enabled.end(), dep_id) != enabled.end();
++      if (!has_dep) {
++        *error = string_printf(
++            "Cannot enable \"%s\": requires feature \"%s\"", id.c_str(), dep);
++        return false;
++      }
++    }
++
++    /* Conflicts. */
++    for (const char *conflict : info->conflicts) {
++      if (conflict == nullptr) {
++        break;
++      }
++      const string conflict_id(conflict);
++      if (std::find(enabled.begin(), enabled.end(), conflict_id) != enabled.end()) {
++        *error = string_printf(
++            "Cannot enable \"%s\" together with \"%s\": "
++            "these features use incompatible transport models",
++            id.c_str(), conflict);
++        return false;
++      }
++    }
++  }
++  return true;
++}
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/scene/research_features.h b/intern/cycles/scene/research_features.h
+new file mode 100644
+index 00000000000..4cf1e7a5a4b
+--- /dev/null
++++ b/intern/cycles/scene/research_features.h
+@@ -0,0 +1,46 @@
++#pragma once
++
++#include "util/string.h"
++#include "util/vector.h"
++
++CCL_NAMESPACE_BEGIN
++
++/* Rendering modes (Research Edition spec, section 3). */
++enum class RenderMode : uint {
++  OFFLINE = 0,
++  REALTIME = 1,
++  NUM_RENDER_MODES
++};
++
++/* Experimental status of a research feature. */
++enum class ResearchFeatureStatus {
++  STABLE,
++  EXPERIMENTAL,
++  RESEARCH,
++};
++
++/* Metadata for one research feature: supported render modes, required
++ * dependencies, incompatible features and experimental status.
++ * Dependencies/conflicts are null-terminated id lists. */
++struct ResearchFeatureInfo {
++  const char *id;
++  uint modes;                  /* bitmask of RenderMode values */
++  const char *dependencies[4]; /* required features (null-terminated) */
++  const char *conflicts[4];    /* incompatible features (null-terminated) */
++  ResearchFeatureStatus status;
++};
++
++static constexpr uint render_mode_bit(RenderMode mode)
++{
++  return 1u << (uint)mode;
++}
++
++/* Look up feature info by id; nullptr when unknown. */
++const ResearchFeatureInfo *research_feature_find(const string &id);
++
++/* Validate an enabled-feature set against the registry: checks that every
++ * feature is known, its dependencies are present and no conflicts are
++ * enabled. On failure returns false and fills *error with the reason. */
++bool research_validate_features(const vector<string> &enabled, string *error);
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/scene/shader_nodes.cpp b/intern/cycles/scene/shader_nodes.cpp
+index ee436b2dc54..83194ed4d8c 100644
+--- a/intern/cycles/scene/shader_nodes.cpp
++++ b/intern/cycles/scene/shader_nodes.cpp
+@@ -2941,6 +2941,93 @@ void TranslucentBsdfNode::compile(OSLCompiler &compiler)
+   compiler.add(this, "node_translucent_bsdf");
+ }
+ 
++/* Wave Diffraction BSDF: Fraunhofer free-space diffraction of a rectangular
++ * slit aperture (ported from wave_tracer). */
++
++NODE_DEFINE(WaveDiffractionBsdfNode)
++{
++  NodeType *type = NodeType::add("wave_diffraction_bsdf", create, NodeType::SHADER);
++
++  SOCKET_IN_COLOR(color, "Color", make_float3(1.0f, 1.0f, 1.0f));
++  SOCKET_IN_NORMAL(normal, "Normal", zero_float3(), SocketType::LINK_NORMAL);
++  SOCKET_IN_FLOAT(surface_mix_weight, "SurfaceMixWeight", 0.0f, SocketType::SVM_INTERNAL);
++  SOCKET_IN_FLOAT(width, "Width", 0.0002f);
++  SOCKET_IN_FLOAT(height, "Height", 0.001f);
++  SOCKET_IN_FLOAT(wavelength, "Wavelength", 550.0f);
++  SOCKET_IN_FLOAT(dispersion, "Dispersion", 0.0f);
++  SOCKET_IN_FLOAT(polarizer_angle, "Polarizer Angle", 0.0f);
++  SOCKET_IN_FLOAT(polarized_input, "Polarized Input", 0.0f);
++  SOCKET_IN_FLOAT(slit_separation, "Slit Separation", 0.0f);
++  SOCKET_IN_VECTOR(tangent, "Tangent", make_float3(1.0f, 0.0f, 0.0f));
++
++  SOCKET_OUT_CLOSURE(BSDF, "BSDF");
++
++  return type;
++}
++
++WaveDiffractionBsdfNode::WaveDiffractionBsdfNode() : BsdfNode(get_node_type())
++{
++  closure = CLOSURE_BSDF_WAVE_DIFFRACTION_ID;
++}
++
++void WaveDiffractionBsdfNode::compile(SVMCompiler &compiler)
++{
++  BsdfNode::compile(compiler,
++                    SVMNodeWaveDiffractionBsdfData{.width = compiler.input_float("Width"),
++                                                   .height = compiler.input_float("Height"),
++                                                   .wavelength = compiler.input_float("Wavelength"),
++                                                   .dispersion = compiler.input_float("Dispersion"),
++                                                   .polarizer_angle = compiler.input_float("Polarizer Angle"),
++                                                   .polarized_input = compiler.input_float("Polarized Input"),
++                                                   .slit_separation = compiler.input_float("Slit Separation"),
++                                                   .normal_offset = compiler.input_link("Normal"),
++                                                   .tangent_offset = compiler.input_link("Tangent")});
++}
++
++void WaveDiffractionBsdfNode::compile(OSLCompiler &compiler)
++{
++  compiler.add(this, "node_wave_diffraction_bsdf");
++}
++
++/* Wave Thin-Film BSDF */
++
++NODE_DEFINE(WaveThinFilmBsdfNode)
++{
++  NodeType *type = NodeType::add("wave_thin_film_bsdf", create, NodeType::SHADER);
++
++  SOCKET_IN_COLOR(color, "Color", make_float3(1.0f, 1.0f, 1.0f));
++  SOCKET_IN_NORMAL(normal, "Normal", zero_float3(), SocketType::LINK_NORMAL);
++  SOCKET_IN_FLOAT(surface_mix_weight, "SurfaceMixWeight", 0.0f, SocketType::SVM_INTERNAL);
++  SOCKET_IN_FLOAT(n0, "Ambient Index", 1.0f);
++  SOCKET_IN_FLOAT(n1, "Film Index", 1.5f);
++  SOCKET_IN_FLOAT(n2, "Substrate Index", 2.0f);
++  SOCKET_IN_FLOAT(thickness, "Film Thickness (nm)", 100.0f);
++
++  SOCKET_OUT_CLOSURE(BSDF, "BSDF");
++
++  return type;
++}
++
++WaveThinFilmBsdfNode::WaveThinFilmBsdfNode() : BsdfNode(get_node_type())
++{
++  closure = CLOSURE_BSDF_WAVE_THIN_FILM_ID;
++}
++
++void WaveThinFilmBsdfNode::compile(SVMCompiler &compiler)
++{
++  BsdfNode::compile(compiler,
++                    SVMNodeWaveThinFilmBsdfData{.n0 = compiler.input_float("Ambient Index"),
++                                                .n1 = compiler.input_float("Film Index"),
++                                                .n2 = compiler.input_float("Substrate Index"),
++                                                .thickness = compiler.input_float("Film Thickness (nm)"),
++                                                .normal_offset = compiler.input_link("Normal")});
++}
++
++void WaveThinFilmBsdfNode::compile(OSLCompiler &compiler)
++{
++  compiler.add(this, "node_wave_thin_film_bsdf");
++}
++
+ /* Transparent BSDF Closure */
+ 
+ NODE_DEFINE(TransparentBsdfNode)
+diff --git a/intern/cycles/scene/shader_nodes.h b/intern/cycles/scene/shader_nodes.h
+index dff489021de..e51fd7697e6 100644
+--- a/intern/cycles/scene/shader_nodes.h
++++ b/intern/cycles/scene/shader_nodes.h
+@@ -607,6 +607,32 @@ class TranslucentBsdfNode : public BsdfNode {
+   SHADER_NODE_CLASS(TranslucentBsdfNode)
+ };
+ 
++/* Wave Diffraction BSDF: Fraunhofer free-space diffraction of a rectangular
++ * slit aperture (ported from wave_tracer). */
++class WaveDiffractionBsdfNode : public BsdfNode {
++ public:
++  SHADER_NODE_CLASS(WaveDiffractionBsdfNode)
++
++  NODE_SOCKET_API(float, width)
++  NODE_SOCKET_API(float, height)
++  NODE_SOCKET_API(float, wavelength)
++  NODE_SOCKET_API(float, dispersion)
++  NODE_SOCKET_API(float, polarizer_angle)
++  NODE_SOCKET_API(float, polarized_input)
++  NODE_SOCKET_API(float, slit_separation)
++  NODE_SOCKET_API(float3, tangent)
++};
++
++/* Wave Thin-Film BSDF: single dielectric film interference (iridescence). */
++class WaveThinFilmBsdfNode : public BsdfNode {
++ public:
++  SHADER_NODE_CLASS(WaveThinFilmBsdfNode)
++
++  NODE_SOCKET_API(float, n0)
++  NODE_SOCKET_API(float, n1)
++  NODE_SOCKET_API(float, n2)
++  NODE_SOCKET_API(float, thickness)
++};
+ class TransparentBsdfNode : public BsdfNode {
+  public:
+   SHADER_NODE_CLASS(TransparentBsdfNode)
+diff --git a/intern/cycles/util/CMakeLists.txt b/intern/cycles/util/CMakeLists.txt
+index 46338dd8e0b..d09ae9de6a1 100644
+--- a/intern/cycles/util/CMakeLists.txt
++++ b/intern/cycles/util/CMakeLists.txt
+@@ -10,6 +10,7 @@ set(INC_SYS
+ )
+ 
+ set(SRC
++  ../waveoptics/wav_fsd_tables.cpp
+   aligned_malloc.cpp
+   colorspace.cpp
+   debug.cpp
+@@ -48,6 +49,19 @@ set(LIB
+ )
+ 
+ set(SRC_HEADERS
++  ../waveoptics/wav_cerf.h
++  ../waveoptics/wav_complex.h
++  ../waveoptics/wav_double_slit.cpp
++  ../waveoptics/wav_fresnel.h
++  ../waveoptics/wav_fsd.h
++  ../waveoptics/wav_fsd_sampler.h
++  ../waveoptics/wav_fsd_tables.h
++  ../waveoptics/wav_gaussian.h
++  ../waveoptics/wav_math.h
++  ../waveoptics/wav_spectrum.h
++  ../waveoptics/wav_stokes.h
++  ../waveoptics/wav_thin_film.h
++  ../waveoptics/wav_utd.h
+   algorithm.h
+   aligned_malloc.h
+   args.h
+diff --git a/intern/cycles/waveoptics/README.md b/intern/cycles/waveoptics/README.md
+new file mode 100644
+index 00000000000..7fcbeb965e8
+--- /dev/null
++++ b/intern/cycles/waveoptics/README.md
+@@ -0,0 +1,64 @@
++# Wave Optics Module (src/waveoptics)
++
++Free-space diffraction (FSD), UTD edge diffraction, Fresnel and
++polarimetric (Stokes/Mueller) mathematics ported from
++[**wave_tracer**](https://github.com/ssteinberg/wave_tracer)
++(a wave-optical path tracer by Shlomi Steinberg), integrated into Cycles.
++
++## Contents
++
++| File | Contents | Source |
++|------|----------|--------|
++| wav_complex.h  | GPU-friendly complex number type | new |
++| wav_math.h     | constants + 2D helpers | wt/math/common.hpp |
++| wav_cerf.h     | complex complementary error function (series + continued fraction) | replaces libcerf dependency |
++| wav_utd.h      | UTD wedge diffraction (a+/- , F transition, wedge UTD) | wt/interaction/fsd/utd.hpp, common.hpp |
++| wav_fsd.h      | Fraunhofer FSD angular scattering function (alpha1/2, chi masks, Psi, ASF) | wt/interaction/fsd/fraunhofer/fsd.hpp |
++| wav_fsd_sampler.h | importance sampler for the FSD ASF (rejection sampling) | wt/interaction/fsd/fraunhofer/fsd_sampler.cpp + fsd_lut.hpp |
++| wav_fsd_tables.h/.cpp | host-built inverse-CDF lobe tables (256x256, |zeta|<=64) | replaces the precomputed data/fsd LUT files |
++| wav_fresnel.h  | Fresnel reflection/refraction with complex index | wt/interaction/fresnel.hpp |
++| wav_stokes.h   | Stokes parameters vector + Mueller operators | wt/interaction/polarimetric/stokes.hpp, mueller.hpp |
++| wav_gaussian.h | Gaussian beam cross-section amplitude | wt/beam/gaussian_wavefront.hpp |
++| wav_test.cpp   | standalone numerical validation (all tests pass) | new |
++
++## Usage
++
++The module is consumed by the kernel closure
++`src/kernel/closure/bsdf_wave_diffraction.h`, which exposes the slit
++diffraction model as a Cycles BSDF node ("Wave Diffraction BSDF",
++`wave_diffraction_bsdf` in scene XML / OSL). See
++`examples/scene_wave_diffraction.xml` for a complete demo scene.
++
++Build the standalone test:
++
++    clang++ -std=c++20 -O2 -I <repo>/src -I <repo>/third_party/atomic \
++        "-DCCL_NAMESPACE_BEGIN=namespace ccl {" "-DCCL_NAMESPACE_END=}" \
++        -include arm_neon.h   # macOS arm64 only \
++        src/waveoptics/wav_test.cpp src/waveoptics/wav_fsd_tables.cpp -o /tmp/wav_test
++    /tmp/wav_test
++
++## Notes / limitations
++
++- **License.** The ported mathematics are derived from wave_tracer,
++  Copyright Shlomi Steinberg, licensed **CC BY-NC 4.0** (non-commercial).
++  This is *incompatible* with Cycles' Apache-2.0 for redistribution: the
++  module keeps the attribution and CC BY-NC terms. Using it in a commercial
++  product requires a separate license from the author, or re-implementation
++  from the SIGGRAPH 2024 paper "A Free-Space Diffraction BSDF".
++- **Units.** Cycles scenes use meters; the model internally rescales to the
++  mm-canonical frame used by wave_tracer (`fsd_unit = 1e-3`). Wavelength is
++  taken as a scalar closure parameter (nm); the closure is monochromatic and
++  does not participate in Cycles' (RGB-limited) spectral pipeline yet.
++- **Closure value convention.** Following wave_tracer, the closure's value
++  equals its pdf (f = pdf), so sampling is exact and energy-conserving; the
++  tan-space Jacobian is not applied (paraxial approximation).
++- **Sampling tables.** The lobe inverse-CDF tables are built on the host
++  (CPU) at first use. On GPU devices the closure evaluates to zero
++  (documented limitation; CPU rendering is the supported path).
++- **Domain.** The lobe tables cover |zeta| <= 64 in canonical coordinates;
++  apertures whose diffraction fringes lie beyond that range (extreme
++  height/width ratios) are truncated. This mirrors the fixed-domain LUT
++  approach of the original.
++- The UTD edge diffraction (wav_utd.h) is provided as a self-contained
++  module for future edge-based diffraction work; the v1 closure uses the
++  Fraunhofer FSD model.
+diff --git a/intern/cycles/waveoptics/wav_cerf.h b/intern/cycles/waveoptics/wav_cerf.h
+new file mode 100644
+index 00000000000..e64c03c0f4a
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_cerf.h
+@@ -0,0 +1,95 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Complex complementary error function, needed by the UTD transition
++ * function F(x) of the wave optics module.
++ *
++ * Implemented with the Taylor series for small |z| and the Gauss
++ * continued fraction for large |z| (DLMF 7.5/7.9), so no external
++ * dependency (wave_tracer uses libcerf here).
++ *
++ * Ported from wave_tracer include/wt/interaction/fsd/utd.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float2.h"
++
++#include "waveoptics/wav_complex.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* erfc(z) for complex z. Series for |z| < 8, continued fraction otherwise. */
++ccl_device_inline wav_complex wav_cerfc(const wav_complex z)
++{
++  /* Reflect to the right half plane: erfc(-z) = 2 - erfc(z). */
++  const bool reflect = (z.re < 0.0f);
++  const wav_complex zz = reflect ? wav_make_complex(-z.re, -z.im) : z;
++
++  const float z2 = wav_complex_norm(zz);
++  const float absz = sqrtf(z2);
++
++  wav_complex erfc;
++
++  if (absz < 8.0f) {
++    /* Taylor series: erf(z) = (2/sqrt(pi)) * sum_n (-1)^n z^(2n+1) / (n! (2n+1)).
++     * Iterate term by term. */
++    const float inv_sqrt_pi = 0.56418958354775628694f;
++    wav_complex term = zz; /* z^(2n+1) / (n! (2n+1)) for n=0 */
++    wav_complex sum = term;
++    int n = 0;
++    /* term_{n+1} = term_n * z^2 * (2n+1) / ((n+1)*(2n+3)). */
++    while (n < 256) {
++      const float fn = (float)n;
++      const float scale = (2.0f * fn + 1.0f) / ((fn + 1.0f) * (2.0f * fn + 3.0f));
++      term = wav_complex_mul(term, zz);
++      term = wav_complex_mul(term, zz);
++      term = wav_complex_mul_real(term, scale);
++      const int nn = n + 1;
++      sum = wav_complex_add(sum, (nn & 1) ? wav_complex_mul_real(term, -1.0f) : term);
++      if (wav_complex_norm(term) < 1e-18f * wav_complex_norm(sum))
++        break;
++      ++n;
++    }
++    const wav_complex erf = wav_complex_mul_real(sum, 2.0f * inv_sqrt_pi);
++    erfc = wav_make_complex(1.0f - erf.re, -erf.im);
++  }
++  else {
++    /* Gauss continued fraction (DLMF 7.9.2):
++     * erfc(z) = (1/sqrt(pi)) e^{-z^2} / ( z + (1/2)/(z + 1/(z + (3/2)/(z + ...))) )
++     * Evaluate with backward recurrence. */
++    const float inv_sqrt_pi = 0.56418958354775628694f;
++    const int iters = (int)(2.0f * absz + 10.0f);
++    /* Backward recurrence: start from the tail. */
++    wav_complex f = wav_make_complex(0.0f, 0.0f); /* tail value */
++    for (int i = iters; i >= 1; --i) {
++      const float an = 0.5f * (float)i; /* a_i = i/2 */
++      /* f = an / (z + f) */
++      const wav_complex denom = wav_complex_add(zz, f);
++      f = wav_complex_mul_real(wav_make_complex(
++                                   denom.re, denom.im),
++                               1.0f);
++      /* complex reciprocal */
++      const float d2 = wav_complex_norm(denom);
++      f = wav_make_complex(an * denom.re / d2, -an * denom.im / d2);
++    }
++    /* erfc = (1/sqrt(pi)) e^{-z^2} / (z + f) */
++    const wav_complex denom = wav_complex_add(zz, f);
++    const float d2 = wav_complex_norm(denom);
++    const wav_complex inv_denom = wav_make_complex(denom.re / d2, -denom.im / d2);
++    const wav_complex ez2 = wav_complex_exp(wav_complex_mul_real(
++        wav_complex_mul(zz, zz), -1.0f));
++    erfc = wav_complex_mul_real(wav_complex_mul(ez2, inv_denom), inv_sqrt_pi);
++  }
++
++  return reflect ? wav_make_complex(2.0f - erfc.re, -erfc.im) : erfc;
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_complex.h b/intern/cycles/waveoptics/wav_complex.h
+new file mode 100644
+index 00000000000..219b3919e52
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_complex.h
+@@ -0,0 +1,118 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Complex number type used by the wave optics module.
++ *
++ * The wave optics module ports mathematics from wave_tracer
++ * (https://github.com/ssteinberg/wave_tracer), Copyright Shlomi Steinberg,
++ * licensed under CC BY-NC 4.0. See README.md in this directory for the
++ * licensing note and attribution.
++ */
++
++#pragma once
++
++#include "util/math_float2.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Minimal complex number type, GPU friendly (no std::complex). */
++struct wav_complex {
++  float re, im;
++};
++
++ccl_device_inline wav_complex wav_make_complex(float re, float im)
++{
++  wav_complex c;
++  c.re = re;
++  c.im = im;
++  return c;
++}
++
++ccl_device_inline wav_complex wav_complex_add(const wav_complex a, const wav_complex b)
++{
++  return wav_make_complex(a.re + b.re, a.im + b.im);
++}
++
++ccl_device_inline wav_complex wav_complex_sub(const wav_complex a, const wav_complex b)
++{
++  return wav_make_complex(a.re - b.re, a.im - b.im);
++}
++
++ccl_device_inline wav_complex wav_complex_mul(const wav_complex a, const wav_complex b)
++{
++  return wav_make_complex(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
++}
++
++ccl_device_inline wav_complex wav_complex_mul_real(const wav_complex a, const float s)
++{
++  return wav_make_complex(a.re * s, a.im * s);
++}
++
++ccl_device_inline wav_complex wav_complex_conj(const wav_complex a)
++{
++  return wav_make_complex(a.re, -a.im);
++}
++
++/* |z|^2 */
++ccl_device_inline float wav_complex_norm(const wav_complex a)
++{
++  return a.re * a.re + a.im * a.im;
++}
++
++ccl_device_inline wav_complex wav_complex_add_real(const wav_complex a, const float s)
++{
++  return wav_make_complex(a.re + s, a.im);
++}
++
++ccl_device_inline wav_complex wav_complex_sub_real(const wav_complex a, const float s)
++{
++  return wav_make_complex(a.re - s, a.im);
++}
++
++ccl_device_inline wav_complex wav_complex_div_real(const wav_complex a, const float s)
++{
++  return wav_make_complex(a.re / s, a.im / s);
++}
++
++/* complex division a/b */
++ccl_device_inline wav_complex wav_complex_div(const wav_complex a, const wav_complex b)
++{
++  const float d = wav_complex_norm(b);
++  return wav_make_complex((a.re * b.re + a.im * b.im) / d,
++                          (a.im * b.re - a.re * b.im) / d);
++}
++
++ccl_device_inline float wav_complex_abs(const wav_complex a)
++{
++  return sqrtf(wav_complex_norm(a));
++}
++
++/* exp(z) */
++ccl_device_inline wav_complex wav_complex_exp(const wav_complex a)
++{
++  const float e = expf(a.re);
++  return wav_make_complex(e * cosf(a.im), e * sinf(a.im));
++}
++
++/* polar(r, theta) = r * (cos theta + i sin theta) */
++ccl_device_inline wav_complex wav_complex_polar(const float r, const float theta)
++{
++  return wav_make_complex(r * cosf(theta), r * sinf(theta));
++}
++
++/* complex sqrt, principal branch. */
++ccl_device_inline wav_complex wav_complex_sqrt(const wav_complex a)
++{
++  const float m = wav_complex_abs(a);
++  const float t = sqrtf(fmaxf(0.0f, 0.5f * (m + a.re)));
++  const float u = sqrtf(fmaxf(0.0f, 0.5f * (m - a.re)));
++  return wav_make_complex(t, a.im < 0.0f ? -u : u);
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_double_slit.cpp b/intern/cycles/waveoptics/wav_double_slit.cpp
+new file mode 100644
+index 00000000000..5772151c8fa
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_double_slit.cpp
+@@ -0,0 +1,102 @@
++/* SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Double-slit (Young) interference pattern renderer.
++ *
++ * Computes the far-field ASF of a double slit (width 20 um, height 1 mm,
++ * centre separation 100 um, wavelength 550 nm) on a receiver grid and
++ * writes a PPM image. The pattern shows the single-slit envelope modulated
++ * by the double-slit interference fringes (dark fringes at
++ * xi_x = (2n+1)*pi/s_mm, s_mm = 0.1 -> period 2*pi/s_mm = 62.8 in the
++ * canonical xi frame).
++ *
++ * Usage: wav_double_slit [single|double] > out.ppm  (prints P6 PPM to stdout)
++ */
++
++#include "waveoptics/wav_fsd.h"
++
++#include <cmath>
++#include <cstdio>
++#include <cstring>
++#include <vector>
++
++using namespace ccl;
++using namespace ccl::waveoptics;
++
++int main(int argc, char **argv)
++{
++  const bool single = (argc > 1 && strcmp(argv[1], "single") == 0);
++
++  /* Slit geometry in the canonical mm-scaled frame. */
++  const float fsd_unit = 1e-3f;
++  const float w_mm = 0.00002f / fsd_unit; /* 20 um slit width */
++  const float h_mm = 0.001f / fsd_unit;   /* 1 mm slit height */
++  const float s_mm = single ? 0.0f : 0.0001f / fsd_unit; /* 100 um separation */
++  const float lambda = 550e-9f;
++
++  wav_fsd_edge edges[4];
++  const float half_w = w_mm * 0.5f;
++  const float half_s = s_mm * 0.5f;
++  edges[0] = wav_fsd_edge{make_float2(0.0f, h_mm), make_float2(-half_s - half_w, 0.0f),
++                          wav_make_complex(0.0f, 0.0f), wav_make_complex(0.0f, 1.0f)};
++  edges[1] = wav_fsd_edge{make_float2(0.0f, -h_mm), make_float2(-half_s + half_w, 0.0f),
++                          wav_make_complex(0.0f, 0.0f), wav_make_complex(0.0f, 1.0f)};
++  edges[2] = wav_fsd_edge{make_float2(0.0f, h_mm), make_float2(half_s - half_w, 0.0f),
++                          wav_make_complex(0.0f, 0.0f), wav_make_complex(0.0f, 1.0f)};
++  edges[3] = wav_fsd_edge{make_float2(0.0f, -h_mm), make_float2(half_s + half_w, 0.0f),
++                          wav_make_complex(0.0f, 0.0f), wav_make_complex(0.0f, 1.0f)};
++  const int num_edges = single ? 2 : 4;
++
++  /* 0-th order field amplitude via the same 8-point approximation as the
++   * closure (wave_aperture_psi02). */
++  const float p0s = wav_fsd_p0_sigma;
++  const float2 pts[8] = {
++      make_float2(-0.70710678f, -0.70710678f), make_float2(-1.0f, 0.0f),
++      make_float2(-0.70710678f, 0.70710678f), make_float2(0.0f, 1.0f),
++      make_float2(0.70710678f, 0.70710678f), make_float2(1.0f, 0.0f),
++      make_float2(0.70710678f, -0.70710678f), make_float2(0.0f, -1.0f)};
++  float psi02 = 0.0f;
++  for (int i = 0; i < 8; ++i) {
++    psi02 += wav_fsd_asf_unclamped(
++        edges, num_edges, make_float2(pts[i].x * 3.0f * p0s, pts[i].y * 3.0f * p0s));
++  }
++  psi02 /= 8.0f;
++
++  /* Receiver grid in the canonical xi frame. xi_x covers the single-slit
++   * envelope (+/-2*pi*mm/w = +/-314) resolving the double-slit fringes
++   * (period 2*pi/s_mm = 62.8); xi_y stays inside the alpha2 main lobe. */
++  const int W = 2000, H = 300;
++  const float xmin = -350.0f, xmax = 350.0f;
++  const float ymin = -4.0f, ymax = 4.0f;
++
++  std::vector<float> asf(W * H);
++  float amax = 0.0f;
++  for (int j = 0; j < H; ++j) {
++    const float xi_y = ymin + (ymax - ymin) * j / (H - 1);
++    for (int i = 0; i < W; ++i) {
++      const float xi_x = xmin + (xmax - xmin) * i / (W - 1);
++      const float a = wav_fsd_asf(edges, num_edges, psi02, make_float2(xi_x, xi_y));
++      asf[j * W + i] = a;
++      if (a > amax)
++        amax = a;
++    }
++  }
++
++  /* Logarithmic (dB) tone mapping like the wave_tracer demos. */
++  printf("P6\n%d %d\n255\n", W, H);
++  const float db_min = -30.0f, db_max = 0.0f;
++  for (int j = 0; j < H; ++j) {
++    for (int i = 0; i < W; ++i) {
++      const float a = asf[j * W + i];
++      const float db = 10.0f * log10f(a / amax + 1e-10f);
++      float t = (db - db_min) / (db_max - db_min);
++      t = fmaxf(0.0f, fminf(1.0f, t));
++      const unsigned char v = (unsigned char)(t * 255.0f);
++      fputc(v, stdout);
++      fputc(v, stdout);
++      fputc(v, stdout);
++    }
++  }
++  return 0;
++}
+diff --git a/intern/cycles/waveoptics/wav_fresnel.h b/intern/cycles/waveoptics/wav_fresnel.h
+new file mode 100644
+index 00000000000..dc030cc1de8
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_fresnel.h
+@@ -0,0 +1,186 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Fresnel reflection/refraction with complex refractive index
++ * (needed for wave optics polarization handling).
++ *
++ * Ported verbatim (units stripped) from wave_tracer
++ * include/wt/interaction/fresnel.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float3.h"
++
++#include "waveoptics/wav_complex.h"
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Reflects direction w about normal n. w points away from the surface. */
++ccl_device_inline float3 wav_reflect(const float3 w, const float3 n)
++{
++  return 2.0f * dot(w, n) * n - w;
++}
++
++struct wav_refract_ret {
++  float3 t;
++  float cost;
++  float eta_12;
++  bool tir;
++};
++
++/* Refracts direction w about normal n. w points away from the surface.
++ * eta_12: refractive-index ratio. */
++ccl_device_inline wav_refract_ret wav_refract(const float eta_12,
++                                              const float3 w,
++                                              const float3 n)
++{
++  float eta = eta_12;
++  const float wn = dot(w, n);
++  eta = wn > 0.0f ? eta : 1.0f / eta;
++
++  const float cost2 = 1.0f - wav_sqr(eta) * (1.0f - wav_sqr(wn));
++  wav_refract_ret ret;
++  ret.eta_12 = eta;
++  if (cost2 >= 0.0f) {
++    const float cost = sqrtf(cost2);
++    const float3 t = eta * (wn * n - w) - cost * (wn >= 0.0f ? n : -n);
++    ret.t = normalize(t);
++    ret.cost = cost;
++    ret.tir = false;
++  }
++  else {
++    ret.t = make_float3(0.0f, 0.0f, 1.0f);
++    ret.cost = 0.0f;
++    ret.tir = true;
++  }
++  return ret;
++}
++
++struct wav_fresnel_ret {
++  float3 t;
++  wav_complex eta_12;
++  float Z; /* change of impedance */
++  wav_complex rs, rp;
++  wav_complex ts, tp;
++  float Ts, Tp;
++};
++
++ccl_device_inline bool wav_fresnel_tir(const wav_fresnel_ret &f)
++{
++  return f.Ts == 0.0f && f.Tp == 0.0f;
++}
++ccl_device_inline float wav_fresnel_rs_mag(const wav_fresnel_ret &f)
++{
++  return 1.0f - f.Ts;
++}
++ccl_device_inline float wav_fresnel_rp_mag(const wav_fresnel_ret &f)
++{
++  return 1.0f - f.Tp;
++}
++
++/* Computes Fresnel coefficients and refracted direction at an interface.
++ * w points away from the surface. eta_12: (complex) refractive-index ratio.
++ * NOTE: matches wave_tracer: the coefficient formulas use the real part of
++ * the ratio (from the refraction step); the complex ratio is only used for
++ * the eta == 1 test. */
++ccl_device_inline wav_fresnel_ret wav_fresnel(const wav_complex eta_12,
++                                              const float3 w,
++                                              const float3 n)
++{
++  wav_fresnel_ret ret;
++  ret.eta_12 = eta_12;
++
++  if (eta_12.re == 1.0f && eta_12.im == 0.0f) {
++    ret.t = -w;
++    ret.Z = 1.0f;
++    ret.rs = wav_make_complex(0.0f, 0.0f);
++    ret.rp = wav_make_complex(0.0f, 0.0f);
++    ret.ts = wav_make_complex(1.0f, 0.0f);
++    ret.tp = wav_make_complex(1.0f, 0.0f);
++    ret.Ts = 1.0f;
++    ret.Tp = 1.0f;
++    return ret;
++  }
++
++  const float abs_cosi = fabsf(dot(w, n));
++  const wav_refract_ret refr = wav_refract(eta_12.re, w, n);
++
++  if (abs_cosi == 0.0f || refr.tir) {
++    ret.t = make_float3(0.0f, 0.0f, 1.0f);
++    ret.eta_12 = wav_make_complex(refr.eta_12, 0.0f);
++    ret.Z = 1.0f;
++    ret.rs = wav_make_complex(1.0f, 0.0f);
++    ret.rp = wav_make_complex(1.0f, 0.0f);
++    ret.ts = wav_make_complex(0.0f, 0.0f);
++    ret.tp = wav_make_complex(0.0f, 0.0f);
++    ret.Ts = 0.0f;
++    ret.Tp = 0.0f;
++    return ret;
++  }
++
++  const float cost = refr.cost;
++  const float eta = refr.eta_12;
++
++  const wav_complex rs = wav_complex_div_real(
++      wav_make_complex(eta * abs_cosi - cost, 0.0f),
++      eta * abs_cosi + cost);
++  const wav_complex rp = wav_complex_div_real(
++      wav_make_complex(abs_cosi - eta * cost, 0.0f),
++      abs_cosi + eta * cost);
++  const wav_complex ts = wav_complex_add_real(rs, 1.0f);
++  const wav_complex tp = wav_complex_mul_real(wav_complex_add_real(rp, 1.0f), eta);
++
++  const float Z = fabsf(cost / (eta * abs_cosi));
++
++  ret.t = refr.t;
++  ret.eta_12 = wav_make_complex(eta, 0.0f);
++  ret.Z = Z;
++  ret.rs = rs;
++  ret.rp = rp;
++  ret.ts = ts;
++  ret.tp = tp;
++  ret.Ts = fminf(1.0f, Z * wav_complex_norm(ts));
++  ret.Tp = fminf(1.0f, Z * wav_complex_norm(tp));
++  return ret;
++}
++
++/* Fresnel coefficients (reflection only) at a conductive interface.
++ * w points away from the surface. eta_12: (complex) refractive-index ratio. */
++ccl_device_inline void wav_fresnel_reflection(const wav_complex eta_12,
++                                              const float3 w,
++                                              const float3 n,
++                                              wav_complex *rs,
++                                              wav_complex *rp)
++{
++  const float wn = dot(w, n);
++  if ((eta_12.re == 1.0f && eta_12.im == 0.0f) || wn < 0.0f) {
++    *rs = wav_make_complex(0.0f, 0.0f);
++    *rp = wav_make_complex(0.0f, 0.0f);
++    return;
++  }
++
++  /* t2 = 1 - (1-wn^2) * eta^2 */
++  const wav_complex eta2 = wav_complex_mul(eta_12, eta_12);
++  const wav_complex t2 = wav_complex_sub_real(
++      wav_complex_mul_real(eta2, 1.0f - wav_sqr(wn)), 1.0f);
++  /* t2 = -(t2) to match: c_t{1,0} - (1-wn^2)eta^2 */
++  const wav_complex t2n = wav_make_complex(-t2.re, -t2.im);
++  const wav_complex t = wav_complex_sqrt(t2n);
++  const wav_complex i = wav_make_complex(wn, 0.0f);
++
++  *rs = wav_complex_div(wav_complex_sub(wav_complex_mul(eta_12, i), t),
++                        wav_complex_add(wav_complex_mul(eta_12, i), t));
++  *rp = wav_complex_div(wav_complex_sub(i, wav_complex_mul(eta_12, t)),
++                        wav_complex_add(i, wav_complex_mul(eta_12, t)));
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_fsd.h b/intern/cycles/waveoptics/wav_fsd.h
+new file mode 100644
+index 00000000000..7488c634e79
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_fsd.h
+@@ -0,0 +1,177 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Free-space diffraction (FSD) angular scattering function mathematics,
++ * under the Fraunhofer approximation.
++ *
++ * Ported verbatim (units stripped) from wave_tracer
++ * include/wt/interaction/fsd/fraunhofer/fsd.hpp and fsd_sampler.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float2.h"
++#include "util/math_float3.h"
++
++#include "waveoptics/wav_complex.h"
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Edge parametrizing a free-space diffraction angular scattering function.
++ * All lengths are in the canonical wavenumber-scaled frame. */
++struct wav_fsd_edge {
++  float2 e;         /* edge vector */
++  float2 v;         /* mid point */
++  wav_complex a_b;  /* beam amplitude difference (ca - cb) */
++  wav_complex iab_2; /* i * (ca + cb) / 2 */
++};
++
++/* Row-vector times matrix: (dot(v, m.c0), dot(v, m.c1)). */
++ccl_device_inline float2 wav_mat2_mul_row(const wav_mat2 m, const float2 v)
++{
++  return make_float2(dot(v, m.c0), dot(v, m.c1));
++}
++
++/* Tangent vector (premultiplied by wavenumber). */
++ccl_device_inline float2 wav_fsd_edge_m(const wav_fsd_edge e)
++{
++  return make_float2(e.e.y, -e.e.x);
++}
++
++/* Xi matrix (premultiplied by wavenumber). */
++ccl_device_inline wav_mat2 wav_fsd_edge_xi(const wav_fsd_edge e)
++{
++  wav_mat2 m;
++  m.c0 = e.e;
++  m.c1 = wav_fsd_edge_m(e);
++  return m;
++}
++
++/* Power contained in chi_e x |alpha1|^2 */
++static constexpr float wav_fsd_power_a1 = 0.0049361075794549872500f;
++/* Power contained in chi_e x |alpha2|^2 */
++static constexpr float wav_fsd_power_a2 = 0.21899789398059305541f;
++
++static constexpr float wav_fsd_p0_sigma = 0.288675134594813f / 4.0f; /* 1/sqrt(12)/4 */
++
++ccl_device_inline float wav_fsd_alpha1(const float x, const float y)
++{
++  if (x == 0.0f)
++    return 0.0f;
++  return WAV_INV_TWO_PI_F * y / (x * (x * x + y * y)) *
++         (cosf(x / 2.0f) - wav_sinc(x / 2.0f));
++}
++ccl_device_inline float wav_fsd_alpha1(const float2 zeta)
++{
++  return wav_fsd_alpha1(zeta.x, zeta.y);
++}
++ccl_device_inline float wav_fsd_alpha2(const float x, const float y)
++{
++  if (x == 0.0f)
++    return 0.0f;
++  return WAV_INV_TWO_PI_F * y / (x * x + y * y) * wav_sinc(x / 2.0f);
++}
++ccl_device_inline float wav_fsd_alpha2(const float2 zeta)
++{
++  return wav_fsd_alpha2(zeta.x, zeta.y);
++}
++
++/* Masking function for the diffracted lobes. */
++ccl_device_inline float wav_fsd_chi_e(const float2 xi)
++{
++  constexpr float chi = 0.830092714835359f;
++  const float xi2 = dot(xi, xi);
++  const float t = 1.0f + chi * xi2;
++  const float t2 = t * t;
++  const float t3 = t2 * t;
++  return fmaxf(0.0f, 1.0f - (3.0f / t2 - 2.0f / t3));
++}
++
++/* Masking function for the 0-th order lobe. */
++ccl_device_inline float wav_fsd_chi_0(const float2 xi)
++{
++  const float2 x = make_float2(xi.x / wav_fsd_p0_sigma, xi.y / wav_fsd_p0_sigma);
++  const float xi2 = dot(x, x);
++  return expf(-0.5f * xi2);
++}
++
++/* Psi function of the FSD diffraction function (without the 0-th order lobe). */
++ccl_device_inline wav_complex wav_fsd_psi(const wav_fsd_edge e, const float2 xi)
++{
++  const float2 zeta = wav_mat2_mul_row(wav_fsd_edge_xi(e), xi);
++
++  const wav_complex a1 = wav_complex_mul_real(e.a_b, wav_fsd_alpha1(zeta));
++  const wav_complex a2 = wav_complex_mul_real(e.iab_2, wav_fsd_alpha2(zeta));
++  const wav_complex sum = wav_complex_add(a1, a2);
++
++  const float ee2 = wav_length2(e.e);
++  const float vxi = dot(e.v, xi);
++
++  return wav_complex_mul(wav_complex_polar(ee2, -vxi), sum);
++}
++
++/* Approximates the |Psi|^2 scattering function (without the 0-th order lobe). */
++ccl_device_inline float wav_fsd_psi2(const wav_fsd_edge e, const float2 xi)
++{
++  const float2 zeta = wav_mat2_mul_row(wav_fsd_edge_xi(e), xi);
++
++  const wav_complex a1 = wav_complex_mul_real(e.a_b, wav_fsd_alpha1(zeta));
++  const wav_complex a2 = wav_complex_mul_real(e.iab_2, wav_fsd_alpha2(zeta));
++  const wav_complex sum = wav_complex_add(a1, a2);
++
++  const float ee2 = wav_length2(e.e);
++  return wav_sqr(ee2) * wav_complex_norm(sum);
++}
++
++/* Evaluates the free-space diffraction ASF (without the 0-th order lobe). */
++ccl_device_inline float wav_fsd_asf_unclamped(const wav_fsd_edge *edges,
++                                              const int num_edges,
++                                              const float2 xi)
++{
++  wav_complex amplitude = wav_make_complex(0.0f, 0.0f);
++  for (int i = 0; i < num_edges; ++i)
++    amplitude = wav_complex_add(amplitude, wav_fsd_psi(edges[i], xi));
++  return wav_complex_norm(amplitude);
++}
++
++/* Evaluates the free-space diffraction ASF. */
++ccl_device_inline float wav_fsd_asf(const wav_fsd_edge *edges,
++                                    const int num_edges,
++                                    const float psi02,
++                                    const float2 xi)
++{
++  const float diffracted = wav_fsd_asf_unclamped(edges, num_edges, xi);
++  return diffracted * wav_fsd_chi_e(xi) + psi02 * wav_fsd_chi_0(xi);
++}
++
++/* Power in the 0-th order lobe. */
++ccl_device_inline float wav_fsd_p0(const float psi02)
++{
++  return WAV_TWO_PI_F * wav_sqr(wav_fsd_p0_sigma) * psi02;
++}
++
++/* Power in the edge's chi_e x |alpha1|^2 lobe (0-th order lobe removed). */
++ccl_device_inline float wav_fsd_pa1(const wav_fsd_edge edge)
++{
++  return wav_sqr(wav_length2(edge.e)) * wav_fsd_power_a1 * wav_complex_norm(edge.a_b);
++}
++/* Power in the edge's chi_e x |alpha2|^2 lobe (0-th order lobe removed). */
++ccl_device_inline float wav_fsd_pa2(const wav_fsd_edge edge)
++{
++  return wav_sqr(wav_length2(edge.e)) * wav_fsd_power_a2 * wav_complex_norm(edge.iab_2);
++}
++/* Approximates the scattered power contained in an edge. */
++ccl_device_inline float wav_fsd_pj(const wav_fsd_edge edge)
++{
++  return wav_fsd_pa1(edge) + wav_fsd_pa2(edge);
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_fsd_sampler.h b/intern/cycles/waveoptics/wav_fsd_sampler.h
+new file mode 100644
+index 00000000000..681b68cbfe3
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_fsd_sampler.h
+@@ -0,0 +1,247 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Importance sampler for the Fraunhofer FSD ASF.
++ *
++ * Ported from wave_tracer src/interaction/fsd/fraunhofer/fsd_sampler.cpp
++ * and include/wt/interaction/fsd/fraunhofer/fsd_lut.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ *
++ * The original uses large precomputed LUT files (2048/3072 samples). Here the
++ * inverse-CDF tables for the alpha1/alpha2 lobes are built numerically at
++ * module load (host side) at a compact 256x128 resolution, over the canonical
++ * domain |zeta| <= WAV_FSD_RMAX (the domain implied by the sampling cutoff
++ * |wolocal|^2 < 0.85 in the original BSDF).
++ *
++ * This header is kernel-safe (no STL, no mutable globals). Table building
++ * lives in wav_fsd_tables.h (host only). On GPU devices the tables are
++ * unavailable and sampling returns zero (documented limitation).
++ */
++
++#pragma once
++
++#include "util/math_float2.h"
++#include "util/math_float3.h"
++
++#include "waveoptics/wav_complex.h"
++#include "waveoptics/wav_fsd.h"
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Canonical radius domain of the lobe tables. */
++static constexpr int wav_fsd_lut_n_theta = 256;
++static constexpr int wav_fsd_lut_n_r = 256;
++static constexpr float wav_fsd_rmax = 64.0f;
++
++struct wav_fsd_lut {
++  float iCDFtheta[wav_fsd_lut_n_theta];
++  float iCDF[wav_fsd_lut_n_theta][wav_fsd_lut_n_r];
++};
++
++#ifdef __KERNEL_GPU__
++ccl_device_inline const wav_fsd_lut *wav_fsd_lut_a1()
++{
++  return nullptr;
++}
++ccl_device_inline const wav_fsd_lut *wav_fsd_lut_a2()
++{
++  return nullptr;
++}
++#else
++/* Host-populated tables (see wav_fsd_tables.h). */
++const wav_fsd_lut *wav_fsd_lut_a1();
++const wav_fsd_lut *wav_fsd_lut_a2();
++#endif
++
++/* Tiny hash-based RNG for the rejection loop (deterministic per seed). */
++ccl_device_inline uint32_t wav_rng_hash(uint32_t x)
++{
++  x ^= x >> 16;
++  x *= 0x7feb352du;
++  x ^= x >> 15;
++  x *= 0x846ca68bu;
++  x ^= x >> 16;
++  return x;
++}
++ccl_device_inline float wav_rng_unit(uint32_t *state)
++{
++  *state = wav_rng_hash(*state + 0x9e3779b9u);
++  return (float)(*state & 0x00ffffffu) * (1.0f / 16777216.0f);
++}
++
++/* Sample a point from the |alpha1|^2 or |alpha2|^2 distribution (canonical
++ * space, first quadrant + random quadrant). Returns false if the LUT is
++ * unavailable (GPU). */
++ccl_device_inline bool wav_fsd_lut_sample(const wav_fsd_lut *lut,
++                                          uint32_t *rng,
++                                          float2 *out)
++{
++  if (lut == nullptr)
++    return false;
++
++  const float u_theta = wav_rng_unit(rng);
++  const float u_r = wav_rng_unit(rng);
++
++  /* Invert marginal angle CDF (theta in [0, pi/2]). */
++  const float th = u_theta * (float)(wav_fsd_lut_n_theta - 1);
++  const int ti = min((int)th, wav_fsd_lut_n_theta - 1);
++  const int ti1 = min(ti + 1, wav_fsd_lut_n_theta - 1);
++  const float tf = th - (float)ti;
++  const float theta = wav_lerp(lut->iCDFtheta[ti], lut->iCDFtheta[ti1], tf) *
++                      WAV_PI_2_F;
++
++  /* Invert conditional radius CDF (bilinear in (theta, u_r)). */
++  const float rf_pos = clamp(u_r, 0.0f, 1.0f) * (float)(wav_fsd_lut_n_r - 1);
++  const int ri = min((int)rf_pos, wav_fsd_lut_n_r - 1);
++  const int ri1 = min(ri + 1, wav_fsd_lut_n_r - 1);
++  const float rff = rf_pos - (float)ri;
++  const float r_lo = wav_lerp(lut->iCDF[ti][ri], lut->iCDF[ti][ri1], rff);
++  const float r_hi = wav_lerp(lut->iCDF[ti1][ri], lut->iCDF[ti1][ri1], rff);
++  const float r = fmaxf(0.0f, wav_lerp(r_lo, r_hi, tf));
++
++  float2 zeta = make_float2(r * cosf(theta), r * sinf(theta));
++
++  /* Random quadrant. */
++  const int q = min(3, (int)(wav_rng_unit(rng) * 4.0f));
++  zeta.x *= (((q + 1) / 2) % 2 == 0) ? 1.0f : -1.0f;
++  zeta.y *= ((q / 2) % 2 == 0) ? 1.0f : -1.0f;
++
++  *out = zeta;
++  return true;
++}
++
++/* Sample the 0-th order lobe (canonical space). */
++ccl_device_inline float2 wav_fsd_sample_p0(uint32_t *rng)
++{
++  /* Box-Muller via two uniforms. */
++  const float u1 = fmaxf(wav_rng_unit(rng), 1e-8f);
++  const float u2 = wav_rng_unit(rng);
++  const float rr = sqrtf(-2.0f * logf(u1));
++  const float th = WAV_TWO_PI_F * u2;
++  return make_float2(wav_fsd_p0_sigma * rr * cosf(th),
++                     wav_fsd_p0_sigma * rr * sinf(th));
++}
++
++/* Sample one edge's lobes (alpha1 or alpha2 mixture). Returns canonical xi in
++ * the aperture's mm-scaled frame (as in wave_tracer). */
++ccl_device_inline bool wav_fsd_sample_edge(const wav_fsd_edge e,
++                                           uint32_t *rng,
++                                           float2 *out)
++{
++  /* Sample one of the alpha1/alpha2 functions of the diffracted lobes. */
++  const float A = wav_complex_norm(e.a_b);
++  const float B = wav_complex_norm(e.iab_2);
++  const float sum = A + B;
++  const bool sample_a1 = (sum > 0.0f) ? (wav_rng_unit(rng) * sum < A) : true;
++
++  float2 zeta;
++  const wav_fsd_lut *lut = sample_a1 ? wav_fsd_lut_a1() : wav_fsd_lut_a2();
++  if (!wav_fsd_lut_sample(lut, rng, &zeta))
++    return false;
++
++  const wav_mat2 invXi = wav_mat2_inverse(wav_fsd_edge_xi(e));
++  *out = wav_mat2_mul_row(invXi, zeta);
++  return true;
++}
++
++/* Aperture: edges + normalization data, in canonical (mm-scaled) frame. */
++struct wav_fsd_aperture {
++  const wav_fsd_edge *edges;
++  int num_edges;
++  float psi02;
++  float P0;
++  float recp_I;
++  float P0_pdf;
++  const float *edge_pdfs;
++};
++
++/* Sampling density (proposal) of the aperture. */
++ccl_device_inline float wav_fsd_sampling_density(const wav_fsd_aperture &aperture,
++                                                 const float2 xi)
++{
++  float diffracted = 0.0f;
++  for (int i = 0; i < aperture.num_edges; ++i)
++    diffracted += wav_fsd_psi2(aperture.edges[i], xi);
++  return diffracted * wav_fsd_chi_e(xi) +
++         aperture.P0 * WAV_INV_TWO_PI_F / wav_sqr(wav_fsd_p0_sigma) *
++             wav_fsd_chi_0(xi);
++}
++
++/* Target ASF of the aperture. */
++ccl_device_inline float wav_fsd_asf_aperture(const wav_fsd_aperture &aperture,
++                                             const float2 xi)
++{
++  return wav_fsd_asf(aperture.edges, aperture.num_edges, aperture.psi02, xi);
++}
++
++struct wav_fsd_sample_ret {
++  float2 xi;
++  float pdf;
++  float weight;
++};
++
++/* Sample the aperture ASF with rejection sampling (target f = ASF, proposal
++ * g = per-edge lobe mixture + P0). Single-edge apertures are exact.
++ * The returned weight is 1 (the closure value is defined as the pdf).
++ * Returns false if no valid sample was produced (e.g. GPU, or degenerate
++ * aperture). */
++ccl_device_inline bool wav_fsd_sample(const wav_fsd_aperture &aperture,
++                                      uint32_t seed,
++                                      wav_fsd_sample_ret *ret)
++{
++  if (aperture.num_edges == 0 || aperture.recp_I <= 0.0f)
++    return false;
++
++  const int M = aperture.num_edges;
++  const int max_tries = M * 1024;
++  const float recp_M = 1.0f / (float)M;
++  uint32_t rng = seed | 1u;
++
++  for (int tr = 0; tr < max_tries; ++tr) {
++    /* Select component: P0 (index M) or one of the edges, with
++     * probabilities P0_pdf / edge_pdfs (matching the proposal density). */
++    const float u = wav_rng_unit(&rng);
++    float cum = 0.0f;
++    int comp = M;
++    for (int i = 0; i < M; ++i) {
++      cum += aperture.edge_pdfs[i];
++      if (u < cum) {
++        comp = i;
++        break;
++      }
++    }
++
++    float2 xi;
++    if (comp == M) {
++      xi = wav_fsd_sample_p0(&rng);
++    }
++    else {
++      if (!wav_fsd_sample_edge(aperture.edges[comp], &rng, &xi))
++        return false;
++    }
++
++    const float g = wav_fsd_sampling_density(aperture, xi);
++    const float f = wav_fsd_asf_aperture(aperture, xi);
++
++    /* Rejection: accept with probability f / (M * g). Single-edge: exact. */
++    const bool done = (M > 1) ? (wav_rng_unit(&rng) * g < f * recp_M) : true;
++
++    if (done) {
++      ret->xi = xi;
++      ret->pdf = f * aperture.recp_I;
++      ret->weight = 1.0f;
++      return true;
++    }
++  }
++
++  return false;
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_fsd_tables.cpp b/intern/cycles/waveoptics/wav_fsd_tables.cpp
+new file mode 100644
+index 00000000000..a18b62f55cd
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_fsd_tables.cpp
+@@ -0,0 +1,141 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include "waveoptics/wav_fsd_tables.h"
++
++#include <cmath>
++#include <mutex>
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++namespace {
++
++struct fsd_lut_storage {
++  wav_fsd_lut a1;
++  wav_fsd_lut a2;
++  std::once_flag once;
++};
++
++fsd_lut_storage &fsd_storage()
++{
++  static fsd_lut_storage storage;
++  return storage;
++}
++
++/* Integrand of the lobe density in polar coordinates:
++ * |f(r cos t, r sin t)|^2 * chi_e(r) * r  (Jacobian). */
++typedef float (*lobe_fn)(float x, float y);
++
++/* Builds inverse-CDF tables for one lobe. */
++void build_lut(const lobe_fn fn, wav_fsd_lut *lut)
++{
++  constexpr int Nt = wav_fsd_lut_n_theta;
++  constexpr int Nr = wav_fsd_lut_n_r;
++  constexpr int Nsub = 4096; /* quadrature subdivisions for the radius CDF */
++
++  /* 1) Conditional radius CDFs per theta bin. */
++  std::vector<std::vector<float>> cond_cdf(Nt, std::vector<float>(Nr + 1, 0.0f));
++  std::vector<float> marginal(Nt, 0.0f);
++
++  for (int ti = 0; ti < Nt; ++ti) {
++    const float theta = (float(ti) + 0.5f) / float(Nt) * WAV_PI_2_F;
++    const float ct = cosf(theta), st = sinf(theta);
++
++    /* Cumulative over radius with dense quadrature, sampled at Nr bins. */
++    std::vector<float> acc(Nsub + 1, 0.0f);
++    float total = 0.0f;
++    const float dr = wav_fsd_rmax / float(Nsub);
++    for (int s = 0; s < Nsub; ++s) {
++      const float r = (float(s) + 0.5f) * dr;
++      const float x = r * ct, y = r * st;
++      const float f = fn(x, y);
++      total += f * f * wav_fsd_chi_e(make_float2(r, 0.0f)) * r * dr;
++      acc[s + 1] = total;
++    }
++    /* Note: chi_e depends on r only, precompute via make_float2(r, 0). */
++
++    marginal[ti] = total;
++
++    /* Store inverse CDF at Nr uniform u points (0..1). */
++    for (int rj = 0; rj < Nr; ++rj) {
++      const float u = (float(rj) + 0.5f) / float(Nr);
++      const float target = u * total;
++      /* Binary search in acc (monotonic). */
++      int lo = 0, hi = Nsub;
++      while (lo + 1 < hi) {
++        const int mid = (lo + hi) / 2;
++        if (acc[mid] < target)
++          lo = mid;
++        else
++          hi = mid;
++      }
++      /* Linear interpolate between acc[lo], acc[hi]. */
++      const float rlo = (float(lo) + 0.5f) * dr;
++      const float a0 = acc[lo], a1 = acc[hi];
++      const float t = (a1 > a0) ? (target - a0) / (a1 - a0) : 0.0f;
++      const float rval = rlo + t * dr; /* actual radius in canonical units */
++      lut->iCDF[ti][rj] = clamp(rval, 0.0f, wav_fsd_rmax);
++    }
++  }
++
++  /* 2) Marginal angle CDF over theta in [0, pi/2]. */
++  float total_m = 0.0f;
++  for (int ti = 0; ti < Nt; ++ti)
++    total_m += marginal[ti];
++  if (total_m <= 0.0f) {
++    for (int ti = 0; ti < Nt; ++ti)
++      lut->iCDFtheta[ti] = float(ti) / float(Nt - 1);
++    return;
++  }
++  std::vector<float> cdf(Nt + 1, 0.0f);
++  for (int ti = 0; ti < Nt; ++ti)
++    cdf[ti + 1] = cdf[ti] + marginal[ti];
++  /* Invert: for each u, find theta. */
++  for (int ti = 0; ti < Nt; ++ti) {
++    const float u = (float(ti) + 0.5f) / float(Nt);
++    const float target = u * total_m;
++    int lo = 0, hi = Nt;
++    while (lo + 1 < hi) {
++      const int mid = (lo + hi) / 2;
++      if (cdf[mid] < target)
++        lo = mid;
++      else
++        hi = mid;
++    }
++    const float t = (cdf[hi] > cdf[lo]) ? (target - cdf[lo]) / (cdf[hi] - cdf[lo]) : 0.0f;
++    lut->iCDFtheta[ti] = clamp((float(lo) + t) / float(Nt - 1), 0.0f, 1.0f);
++  }
++  lut->iCDFtheta[Nt - 1] = 1.0f;
++}
++
++void build_all()
++{
++  fsd_lut_storage &s = fsd_storage();
++  build_lut(&wav_fsd_alpha1, &s.a1);
++  build_lut(&wav_fsd_alpha2, &s.a2);
++}
++
++}  // namespace
++
++const wav_fsd_lut *wav_fsd_lut_a1()
++{
++  fsd_lut_storage &s = fsd_storage();
++  std::call_once(s.once, &build_all);
++  return &s.a1;
++}
++
++const wav_fsd_lut *wav_fsd_lut_a2()
++{
++  fsd_lut_storage &s = fsd_storage();
++  std::call_once(s.once, &build_all);
++  return &s.a2;
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_fsd_tables.h b/intern/cycles/waveoptics/wav_fsd_tables.h
+new file mode 100644
+index 00000000000..735288e2423
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_fsd_tables.h
+@@ -0,0 +1,37 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Host-side construction of the FSD lobe inverse-CDF tables.
++ *
++ * The tables are built numerically from the analytic alpha1/alpha2 lobe
++ * densities (masked by chi_e) over the canonical domain |zeta| <= RMAX,
++ * mirroring the structure of wave_tracer's precomputed LUTs
++ * (include/wt/interaction/fsd/fraunhofer/fsd_lut.hpp).
++ *
++ * Built lazily and thread-safely; host only.
++ */
++
++#pragma once
++
++#include "waveoptics/wav_fsd_sampler.h"
++
++#ifdef __KERNEL_GPU__
++#  error "wav_fsd_tables.h is host-only"
++#endif
++
++#include <mutex>
++#include <vector>
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Builds (once) and returns the alpha1/alpha2 lobe tables. */
++const wav_fsd_lut *wav_fsd_lut_a1();
++const wav_fsd_lut *wav_fsd_lut_a2();
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_gaussian.h b/intern/cycles/waveoptics/wav_gaussian.h
+new file mode 100644
+index 00000000000..5530d7f23d2
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_gaussian.h
+@@ -0,0 +1,57 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Gaussian wavefront (beam cross-section amplitude model).
++ *
++ * Ported (units stripped) from wave_tracer include/wt/beam/gaussian_wavefront.hpp
++ * and include/wt/math/distribution/gaussian2d.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float2.h"
++
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* 2D Gaussian intensity distribution. stddev in scene units. */
++struct wav_gaussian2 {
++  float2 stddev;
++};
++
++ccl_device_inline bool wav_gaussian_is_dirac(const wav_gaussian2 g)
++{
++  return g.stddev.x == 0.0f || g.stddev.y == 0.0f;
++}
++
++/* PDF of the intensity distribution at x (scene units). */
++ccl_device_inline float wav_gaussian_pdf(const wav_gaussian2 g, const float2 x)
++{
++  if (wav_gaussian_is_dirac(g))
++    return 1.0f;
++  const float sx = g.stddev.x, sy = g.stddev.y;
++  const float ex = -0.5f * wav_sqr(x.x / sx) - 0.5f * wav_sqr(x.y / sy);
++  return expf(ex) / (WAV_TWO_PI_F * sx * sy);
++}
++
++/* Field amplitude magnitude at x: sqrt of the intensity PDF. */
++ccl_device_inline float wav_gaussian_amplitude(const wav_gaussian2 g, const float2 x)
++{
++  return sqrtf(wav_gaussian_pdf(g, x));
++}
++
++/* Beam envelope half-extents (3 sigma). */
++ccl_device_inline float2 wav_gaussian_envelope(const wav_gaussian2 g)
++{
++  return make_float2(g.stddev.x * 3.0f, g.stddev.y * 3.0f);
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_math.h b/intern/cycles/waveoptics/wav_math.h
+new file mode 100644
+index 00000000000..056bd93b7fd
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_math.h
+@@ -0,0 +1,100 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Scalar/vector math helpers for the wave optics module.
++ *
++ * Ported from wave_tracer include/wt/math/common.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float2.h"
++#include "util/math_float3.h"
++
++#include "waveoptics/wav_complex.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++#define WAV_PI_F 3.14159265358979323846f
++#define WAV_PI_2_F 1.57079632679489661923f
++#define WAV_TWO_PI_F 6.28318530717958647692f
++#define WAV_INV_TWO_PI_F 0.15915494309189533577f
++#define WAV_SQRT_TWO_F 1.41421356237309504880f
++#define WAV_INV_SQRT_TWO_F 0.70710678118654752440f
++#define WAV_SQRT_PI_2_F 1.25331413731550025121f
++#define WAV_INV_SQRT_TWO_PI_F 0.39894228040143267794f
++#define WAV_INV_PI_F 0.31830988618379067154f
++#define WAV_PI_4_F 0.78539816339744830962f
++#define WAV_INV_SQRT_12_F 0.28867513459481288225f
++
++ccl_device_inline float wav_sqr(const float x)
++{
++  return x * x;
++}
++
++/* Normalized sinc: sin(x)/x. */
++ccl_device_inline float wav_sinc(const float x)
++{
++  if (fabsf(x) < 1e-6f)
++    return 1.0f;
++  return sinf(x) / x;
++}
++
++ccl_device_inline float wav_clamp01(const float x)
++{
++  return clamp(x, 0.0f, 1.0f);
++}
++
++ccl_device_inline float wav_lerp(const float a, const float b, const float t)
++{
++  return (1.0f - t) * a + t * b;
++}
++
++ccl_device_inline float2 wav_mix2(const float2 a, const float2 b, const float t)
++{
++  return make_float2(wav_lerp(a.x, b.x, t), wav_lerp(a.y, b.y, t));
++}
++
++ccl_device_inline float wav_length2(const float2 v)
++{
++  return dot(v, v);
++}
++
++ccl_device_inline float wav_length2(const float3 v)
++{
++  return dot(v, v);
++}
++
++ccl_device_inline float wav_mod(const float x, const float y)
++{
++  const float r = fmodf(x, y);
++  return r < 0.0f ? r + y : r;
++}
++
++/* 2x2 matrix stored by columns. */
++struct wav_mat2 {
++  float2 c0, c1;
++};
++
++ccl_device_inline float2 wav_mat2_mul(const wav_mat2 m, const float2 v)
++{
++  return make_float2(m.c0.x * v.x + m.c1.x * v.y, m.c0.y * v.x + m.c1.y * v.y);
++}
++
++ccl_device_inline wav_mat2 wav_mat2_inverse(const wav_mat2 m)
++{
++  const float det = m.c0.x * m.c1.y - m.c0.y * m.c1.x;
++  wav_mat2 r;
++  r.c0 = make_float2(m.c1.y / det, -m.c0.y / det);
++  r.c1 = make_float2(-m.c1.x / det, m.c0.x / det);
++  return r;
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_spectrum.h b/intern/cycles/waveoptics/wav_spectrum.h
+new file mode 100644
+index 00000000000..568fd355855
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_spectrum.h
+@@ -0,0 +1,37 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles Research Edition
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Wavelength sampling helpers for the wave optics track.
++ *
++ * The v1 implementation uses a three-band dispersion model: the diffraction
++ * pattern is evaluated at the three sRGB primary dominant wavelengths and
++ * each band is assigned to the matching RGB channel, so white light through
++ * an aperture naturally shows chromatic dispersion. Full per-path stochastic
++ * wavelength sampling with a CIE XYZ colour-matching pipeline is future work.
++ */
++
++#pragma once
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Dominant wavelengths (nm) of the sRGB primaries. */
++static constexpr float wav_spectrum_primary_red = 611.36f;
++static constexpr float wav_spectrum_primary_green = 549.15f;
++static constexpr float wav_spectrum_primary_blue = 464.28f;
++
++/* Wavelengths (nm) used for three-band dispersion evaluation, in
++ * (R, G, B) channel order. */
++ccl_device_inline void wav_spectrum_three_band(float *wavelengths_out)
++{
++  wavelengths_out[0] = wav_spectrum_primary_red;
++  wavelengths_out[1] = wav_spectrum_primary_green;
++  wavelengths_out[2] = wav_spectrum_primary_blue;
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_stokes.h b/intern/cycles/waveoptics/wav_stokes.h
+new file mode 100644
+index 00000000000..61acc9e5d3d
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_stokes.h
+@@ -0,0 +1,264 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Polarimetric optics: Stokes parameters vector and Mueller operators.
++ *
++ * Ported (units stripped, frames simplified to a rotation angle around the
++ * propagation axis) from wave_tracer include/wt/interaction/polarimetric/
++ * stokes.hpp and mueller.hpp, Copyright Shlomi Steinberg, CC BY-NC 4.0.
++ * See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float3.h"
++#include "util/math_float4.h"
++
++#include "waveoptics/wav_complex.h"
++#include "waveoptics/wav_fresnel.h"
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Stokes parameters vector. S = (I, Q, U, V). */
++struct wav_stokes {
++  float4 S;
++};
++
++ccl_device_inline wav_stokes wav_stokes_zero()
++{
++  return wav_stokes{make_float4(0.0f, 0.0f, 0.0f, 0.0f)};
++}
++
++ccl_device_inline wav_stokes wav_stokes_unpolarized(const float I)
++{
++  return wav_stokes{make_float4(I, 0.0f, 0.0f, 0.0f)};
++}
++
++ccl_device_inline float wav_stokes_intensity(const wav_stokes S)
++{
++  return S.S.x;
++}
++
++/* (Q, U, V) */
++ccl_device_inline float3 wav_stokes_polarization_state(const wav_stokes S)
++{
++  return make_float3(S.S.y, S.S.z, S.S.w);
++}
++
++ccl_device_inline bool wav_stokes_is_unpolarized(const wav_stokes S)
++{
++  return wav_stokes_polarization_state(S) == make_float3(0.0f, 0.0f, 0.0f);
++}
++
++ccl_device_inline float wav_stokes_polarized_intensity(const wav_stokes S)
++{
++  return len(wav_stokes_polarization_state(S));
++}
++
++ccl_device_inline float wav_stokes_unpolarized_intensity(const wav_stokes S)
++{
++  return fmaxf(0.0f, S.S.x - wav_stokes_polarized_intensity(S));
++}
++
++ccl_device_inline float wav_stokes_degree_of_polarization(const wav_stokes S)
++{
++  const float I = S.S.x;
++  return I > 0.0f ? wav_stokes_polarized_intensity(S) / I : 0.0f;
++}
++
++ccl_device_inline wav_stokes wav_stokes_flip_handness(const wav_stokes S)
++{
++  return wav_stokes{make_float4(S.S.x, S.S.y, -S.S.z, -S.S.w)};
++}
++
++/* Reorients the Stokes vector by a frame rotation of angle (radians) around
++ * the propagation axis: the (Q, U) components rotate by 2*angle. */
++ccl_device_inline wav_stokes wav_stokes_reorient(const wav_stokes S, const float angle)
++{
++  const float c = cosf(2.0f * angle);
++  const float s = sinf(2.0f * angle);
++  const float Q = S.S.y, U = S.S.z;
++  return wav_stokes{make_float4(S.S.x, c * Q - s * U, s * Q + c * U, S.S.w)};
++}
++
++ccl_device_inline wav_stokes wav_stokes_linearly_polarized_0deg(const float I)
++{
++  return wav_stokes{make_float4(I, I, 0.0f, 0.0f)};
++}
++ccl_device_inline wav_stokes wav_stokes_linearly_polarized_45deg(const float I)
++{
++  return wav_stokes{make_float4(I, 0.0f, I, 0.0f)};
++}
++ccl_device_inline wav_stokes wav_stokes_linearly_polarized_90deg(const float I)
++{
++  return wav_stokes{make_float4(I, -I, 0.0f, 0.0f)};
++}
++ccl_device_inline wav_stokes wav_stokes_circularly_polarized(const bool rhc, const float I)
++{
++  return wav_stokes{make_float4(I, 0.0f, 0.0f, rhc ? I : -I)};
++}
++
++ccl_device_inline wav_stokes wav_stokes_add(const wav_stokes a, const wav_stokes b)
++{
++  return wav_stokes{make_float4(a.S.x + b.S.x, a.S.y + b.S.y, a.S.z + b.S.z, a.S.w + b.S.w)};
++}
++
++ccl_device_inline wav_stokes wav_stokes_mul_real(const wav_stokes a, const float s)
++{
++  return wav_stokes{make_float4(a.S.x * s, a.S.y * s, a.S.z * s, a.S.w * s)};
++}
++
++/* 4x4 Mueller matrix, stored row-major (rows[0..3]). */
++struct wav_mueller {
++  float4 rows[4];
++};
++
++ccl_device_inline wav_mueller wav_mueller_identity()
++{
++  wav_mueller M;
++  M.rows[0] = make_float4(1, 0, 0, 0);
++  M.rows[1] = make_float4(0, 1, 0, 0);
++  M.rows[2] = make_float4(0, 0, 1, 0);
++  M.rows[3] = make_float4(0, 0, 0, 1);
++  return M;
++}
++
++ccl_device_inline wav_mueller wav_mueller_handness_flip()
++{
++  wav_mueller M = wav_mueller_identity();
++  M.rows[2] = make_float4(0, 0, -1, 0);
++  M.rows[3] = make_float4(0, 0, 0, -1);
++  return M;
++}
++
++/* Mueller rotation operator: rotates from tangent t1 to tangent t2
++ * (angle = angle(t1 -> t2)). */
++ccl_device_inline wav_mueller wav_mueller_rotation(const float angle)
++{
++  const float c = cosf(2.0f * angle);
++  const float s = sinf(2.0f * angle);
++  wav_mueller M = wav_mueller_identity();
++  M.rows[1] = make_float4(0, c, -s, 0);
++  M.rows[2] = make_float4(0, s, c, 0);
++  return M;
++}
++
++/* Linear polarizer with polarization angle theta (radians). */
++ccl_device_inline wav_mueller wav_mueller_linear_polarizer(const float theta)
++{
++  const float s = sinf(2.0f * theta);
++  const float c = cosf(2.0f * theta);
++  wav_mueller P = wav_mueller_identity();
++  P.rows[0] = make_float4(1, c, s, 0);
++  P.rows[1] = make_float4(c, c * c, c * s, 0);
++  P.rows[2] = make_float4(s, c * s, s * s, 0);
++  P.rows[3] = make_float4(0, 0, 0, 0);
++  for (int i = 0; i < 4; ++i)
++    P.rows[i] = make_float4(P.rows[i].x * 0.5f, P.rows[i].y * 0.5f, P.rows[i].z * 0.5f, P.rows[i].w * 0.5f);
++  return P;
++}
++
++ccl_device_inline wav_mueller wav_mueller_perfect_depolarizer()
++{
++  wav_mueller P = wav_mueller_identity();
++  P.rows[1] = make_float4(0, 0, 0, 0);
++  P.rows[2] = make_float4(0, 0, 0, 0);
++  P.rows[3] = make_float4(0, 0, 0, 0);
++  return P;
++}
++
++/* Mueller matrix of a Fresnel interaction (reflection or transmission).
++ * fs/fp: complex s/p Fresnel coefficients. */
++ccl_device_inline wav_mueller wav_mueller_fresnel(const wav_complex fs, const wav_complex fp)
++{
++  const float Rs = wav_complex_norm(fs);
++  const float Rp = wav_complex_norm(fp);
++  const float m00 = (Rs + Rp) * 0.5f;
++  const float m01 = (Rs - Rp) * 0.5f;
++  const float m22 = fp.re * fs.re + fp.im * fs.im;  /* Re(fp * conj(fs)) */
++  const float m23 = fp.im * fs.re - fp.re * fs.im;  /* Im(fp * conj(fs)) */
++
++  wav_mueller M;
++  M.rows[0] = make_float4(m00, m01, 0, 0);
++  M.rows[1] = make_float4(m01, m00, 0, 0);
++  M.rows[2] = make_float4(0, 0, m22, -m23);
++  M.rows[3] = make_float4(0, 0, m23, m22);
++  return M;
++}
++
++/* Mueller matrix of a Fresnel reflection. */
++ccl_device_inline wav_mueller wav_mueller_fresnel_reflection(const wav_complex eta_12,
++                                                             const float3 w,
++                                                             const float3 n)
++{
++  wav_complex rs, rp;
++  wav_fresnel_reflection(eta_12, w, n, &rs, &rp);
++  return wav_mueller_fresnel(rs, rp);
++}
++
++ccl_device_inline wav_mueller wav_mueller_mul_real(const wav_mueller M, const float s)
++{
++  wav_mueller R;
++  for (int i = 0; i < 4; ++i)
++    R.rows[i] = make_float4(M.rows[i].x * s, M.rows[i].y * s, M.rows[i].z * s, M.rows[i].w * s);
++  return R;
++}
++
++/* Mueller matrix of a Fresnel transmission. */
++ccl_device_inline wav_mueller wav_mueller_fresnel_transmission(const wav_complex eta_12,
++                                                               const float3 w,
++                                                               const float3 n)
++{
++  const wav_fresnel_ret f = wav_fresnel(eta_12, w, n);
++  return wav_mueller_mul_real(wav_mueller_fresnel(f.ts, f.tp), f.Z);
++}
++
++ccl_device_inline wav_mueller wav_mueller_add(const wav_mueller a, const wav_mueller b)
++{
++  wav_mueller R;
++  for (int i = 0; i < 4; ++i)
++    R.rows[i] = make_float4(a.rows[i].x + b.rows[i].x, a.rows[i].y + b.rows[i].y,
++                            a.rows[i].z + b.rows[i].z, a.rows[i].w + b.rows[i].w);
++  return R;
++}
++
++/* Matrix composition: (A*B)[i][j] = sum_k A[i][k] B[k][j]. */
++ccl_device_inline wav_mueller wav_mueller_compose(const wav_mueller a, const wav_mueller b)
++{
++  wav_mueller R;
++  for (int i = 0; i < 4; ++i) {
++    float r[4] = {0, 0, 0, 0};
++    const float4 ra = a.rows[i];
++    for (int k = 0; k < 4; ++k) {
++      const float aik = (k == 0) ? ra.x : (k == 1) ? ra.y : (k == 2) ? ra.z : ra.w;
++      const float4 rb = b.rows[k];
++      r[0] += aik * rb.x;
++      r[1] += aik * rb.y;
++      r[2] += aik * rb.z;
++      r[3] += aik * rb.w;
++    }
++    R.rows[i] = make_float4(r[0], r[1], r[2], r[3]);
++  }
++  return R;
++}
++
++/* Apply Mueller matrix to a Stokes vector (same frame). */
++ccl_device_inline wav_stokes wav_mueller_apply(const wav_mueller M, const wav_stokes S)
++{
++  float r[4] = {0, 0, 0, 0};
++  const float s[4] = {S.S.x, S.S.y, S.S.z, S.S.w};
++  for (int i = 0; i < 4; ++i) {
++    const float4 row = M.rows[i];
++    r[i] = row.x * s[0] + row.y * s[1] + row.z * s[2] + row.w * s[3];
++  }
++  return wav_stokes{make_float4(r[0], r[1], r[2], r[3])};
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_thin_film.h b/intern/cycles/waveoptics/wav_thin_film.h
+new file mode 100644
+index 00000000000..1ca24df77c1
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_thin_film.h
+@@ -0,0 +1,110 @@
++/* SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Thin-film (single-layer) interference reflectance.
++ *
++ * A single dielectric film of thickness d and refractive index n1 between an
++ * ambient medium (n0) and a substrate (n2). The total reflected amplitude is
++ * the Airy sum over multiple reflections inside the film; the round-trip
++ * phase delta = 2*k*n1*d*cos(theta_t) makes the reflectance wavelength-
++ * dependent, producing iridescent colours under broadband light.
++ *
++ * Standard thin-film optics (Hecht, "Optics"): the total reflection
++ * coefficient of the stack is
++ *
++ *   r = (r01 + r12 * e^(i*2*delta)) / (1 + r01 * r12 * e^(i*2*delta))
++ *
++ * with r01, r12 the single-interface Fresnel coefficients (s and p), and
++ * delta the film round-trip phase. Reimplemented from the formula; the
++ * Fresnel coefficients come from wav_fresnel.h. */
++
++#pragma once
++
++#include "util/math_float2.h"
++#include "util/math_float3.h"
++
++#include "waveoptics/wav_complex.h"
++#include "waveoptics/wav_fresnel.h"
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++/* Reflectance of a single thin film between two media.
++ *
++ * n0: ambient refractive index (real)
++ * n1: film refractive index (real)
++ * n2: substrate refractive index (real)
++ * d:  film thickness (metres)
++ * lambda: vacuum wavelength (metres)
++ * cosi: |cos(theta_incident)| (>= 0)
++ *
++ * Returns (Rs, Rp) power reflectances for s and p polarization. */
++ccl_device_inline float2 wav_thin_film_reflectance(const float n0,
++                                                   const float n1,
++                                                   const float n2,
++                                                   const float d,
++                                                   const float lambda,
++                                                   const float cosi)
++{
++  if (n1 <= 0.0f || cosi <= 0.0f || lambda <= 0.0f || d < 0.0f) {
++    return make_float2(0.0f, 0.0f);
++  }
++
++  const float3 n = make_float3(0.0f, 0.0f, 1.0f);
++
++  /* Snell angles. */
++  const float sini = sqrtf(fmaxf(0.0f, 1.0f - cosi * cosi));
++  const float sint1 = fminf(1.0f, n0 / n1 * sini);
++  const float cost1 = sqrtf(fmaxf(0.0f, 1.0f - sint1 * sint1));
++
++  /* Interface Fresnel coefficients with the actual incidence angle. */
++  const float3 w0 = make_float3(-sini, 0.0f, -cosi);
++  const float3 w1 = make_float3(-sint1, 0.0f, -cost1);
++  const wav_complex eta01 = wav_make_complex(n1 / n0, 0.0f);
++  const wav_complex eta12 = wav_make_complex(n2 / n1, 0.0f);
++  const wav_fresnel_ret f01 = wav_fresnel(eta01, w0, n);
++  const wav_fresnel_ret f12 = wav_fresnel(eta12, w1, n);
++
++  /* Round-trip phase inside the film. */
++  const float k = WAV_TWO_PI_F / fmaxf(lambda, 1e-12f);
++  const float delta = 2.0f * k * n1 * d * cost1;
++  const wav_complex e2id = wav_complex_polar(1.0f, 2.0f * delta);
++
++  wav_complex rs_total, rp_total;
++  for (int pol = 0; pol < 2; ++pol) {
++    const wav_complex r01 = (pol == 0) ? f01.rs : f01.rp;
++    const wav_complex r12 = (pol == 0) ? f12.rs : f12.rp;
++    /* r = (r01 + r12*e2id) / (1 + r01*r12*e2id) */
++    const wav_complex one = wav_make_complex(1.0f, 0.0f);
++    const wav_complex num = wav_complex_add(r01, wav_complex_mul(r12, e2id));
++    const wav_complex den = wav_complex_add(one, wav_complex_mul(wav_complex_mul(r01, r12), e2id));
++    const wav_complex r = wav_complex_div(num, den);
++    if (pol == 0) {
++      rs_total = r;
++    }
++    else {
++      rp_total = r;
++    }
++  }
++
++  return make_float2(wav_complex_norm(rs_total), wav_complex_norm(rp_total));
++}
++
++/* Thin-film reflectance averaged over polarization (unpolarized light). */
++ccl_device_inline float wav_thin_film_reflectance_unpolarized(const float n0,
++                                                              const float n1,
++                                                              const float n2,
++                                                              const float d,
++                                                              const float lambda,
++                                                              const float cosi)
++{
++  const float2 R = wav_thin_film_reflectance(n0, n1, n2, d, lambda, cosi);
++  return 0.5f * (R.x + R.y);
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/intern/cycles/waveoptics/wav_utd.h b/intern/cycles/waveoptics/wav_utd.h
+new file mode 100644
+index 00000000000..997147c4f45
+--- /dev/null
++++ b/intern/cycles/waveoptics/wav_utd.h
+@@ -0,0 +1,208 @@
++/*
++ * SPDX-FileCopyrightText: 2025 Entro-Cycles integration
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Uniform Theory of Diffraction (UTD) wedge diffraction.
++ *
++ * Ported verbatim (units stripped) from wave_tracer
++ * include/wt/interaction/fsd/utd.hpp and fsd/common.hpp,
++ * Copyright Shlomi Steinberg, CC BY-NC 4.0. See README.md.
++ */
++
++#pragma once
++
++#include "util/math_float3.h"
++
++#include "waveoptics/wav_complex.h"
++#include "waveoptics/wav_math.h"
++
++CCL_NAMESPACE_BEGIN
++
++namespace waveoptics {
++
++static constexpr float wav_utd_min_sin_beta = 1e-3f;
++
++/* UTD wedge edge (all lengths in scene units, angles in radians). */
++struct wav_wedge_edge {
++  float3 v;   /* edge midpoint */
++  float l;    /* edge length */
++  float3 nff; /* front-face normal */
++  float3 tff; /* tangent direction pointing into the wedge */
++  float3 nbf; /* back-face normal */
++  float alpha; /* wedge opening angle (rad) */
++  float eta;   /* refractive index (kept for parity; not used by UTD) */
++};
++
++/* UTD a+/- functions. */
++template<int sgn>
++ccl_device_inline float wav_utd_a(const float phi, const float n)
++{
++  static_assert(sgn == +1 || sgn == -1, "sgn must be +/-1");
++  const float N = roundf((float)(sgn * WAV_PI_F + phi) * WAV_INV_TWO_PI_F / n);
++  return 2.0f * wav_sqr(cosf(WAV_PI_F * n * N - phi / 2.0f));
++}
++
++/* UTD F transition function. */
++ccl_device_inline wav_complex wav_utd_f(const float x)
++{
++  const float absx = fabsf(x);
++
++  wav_complex result;
++  if (absx < 6.0f) {
++    const float sqrt_x = sqrtf(absx);
++    const wav_complex cerf = wav_cerfc(
++        wav_complex_mul_real(wav_complex_polar(1.0f, WAV_PI_4_F), sqrt_x));
++    result = wav_complex_mul_real(wav_make_complex(1.0f, 1.0f), WAV_SQRT_PI_2_F);
++    result = wav_complex_mul(result, wav_make_complex(sqrt_x, 0.0f));
++    result = wav_complex_mul(result, wav_complex_exp(wav_make_complex(0.0f, absx)));
++    result = wav_complex_mul(result, cerf);
++  }
++  else {
++    /* Fast approximation for large values. */
++    const float r = 1.0f / (2.0f * absx);
++    const float r2 = r * r;
++    const float r3 = r2 * r;
++    const float r4 = r2 * r2;
++    result = wav_make_complex(1.0f + (-3.0f * r2 + 75.0f * r4),
++                              r - 15.0f * r3);
++  }
++
++  return x < 0.0f ? wav_complex_conj(result) : result;
++}
++
++/* Returns the point on the wedge that satisfies Fermat's principle
++ * (src -> dst), if such a point exists. */
++ccl_device_inline bool wav_wedge_diffraction_point(const wav_wedge_edge &e,
++                                                   const float3 src,
++                                                   const float3 dst,
++                                                   float3 *p)
++{
++  const float3 ed = cross(e.nff, e.tff);
++  const float sl = sqrtf(wav_length2(make_float2(dot(src - e.v, e.tff), dot(src - e.v, e.nff))));
++  const float dl = sqrtf(wav_length2(make_float2(dot(dst - e.v, e.tff), dot(dst - e.v, e.nff))));
++  const float dist = dot(ed, src - e.v) + dot(dst - src, ed) * sl / (sl + dl);
++
++  if (fabsf(dist) > e.l / 2.0f)
++    return false;
++
++  const float3 pp = e.v + ed * dist;
++  if (pp == src || pp == dst)
++    return false;
++  *p = pp;
++  return true;
++}
++
++/* Returns the point on the wedge that satisfies Fermat's principle
++ * (src -> direction wo), if such a point exists. */
++ccl_device_inline bool wav_wedge_diffraction_point_dir(const wav_wedge_edge &e,
++                                                       const float3 src,
++                                                       const float3 wo,
++                                                       float3 *p)
++{
++  const float3 ed = cross(e.nff, e.tff);
++  const float cos_beta = dot(wo, ed);
++  const float sin_beta = sqrtf(fmaxf(0.0f, 1.0f - wav_sqr(cos_beta)));
++
++  if (sin_beta < wav_utd_min_sin_beta)
++    return false;
++
++  const float sl = sqrtf(wav_length2(make_float2(dot(src - e.v, e.tff), dot(src - e.v, e.nff))));
++  const float3 prj_src = e.v + dot(src - e.v, ed) * ed;
++  const float3 pp = prj_src + sl * (cos_beta / sin_beta) * ed;
++
++  if (wav_length2(pp - e.v) > wav_sqr(e.l / 2.0f))
++    return false;
++  if (pp == src)
++    return false;
++  *p = pp;
++  return true;
++}
++
++/* UTD result: diffraction coefficients and SH frames. */
++struct wav_utd_ret {
++  wav_complex Ds, Dh;
++  float3 si, hi; /* incident SH frame */
++  float3 so, ho; /* scattered SH frame */
++};
++
++/* The UTD wedge diffraction function.
++ * Does NOT account for the phase term exp(-i*k*ro).
++ * k: wavenumber (2*pi/lambda), wi/wo: incident/outgoing directions,
++ * ro: distance from the edge point to the receiver. */
++ccl_device_inline wav_utd_ret wav_wedge_utd(const wav_wedge_edge &wedge,
++                                            const float k,
++                                            const float3 wi,
++                                            const float3 wo,
++                                            const float ro)
++{
++  const float3 e = cross(wedge.nff, wedge.tff);
++  const float n = 2.0f - wedge.alpha * WAV_INV_PI_F;
++
++  /* Build in/out transverse frames. */
++  const float3 ti = -normalize(cross(e, -wi));
++  const float3 bi = normalize(cross(ti, -wi));
++  const float3 to = -normalize(cross(e, wo));
++  const float3 bo = normalize(cross(to, wo));
++
++  /* Angles. */
++  const float sin_beta2 = fmaxf(0.0f, 1.0f - wav_sqr(dot(wi, e)));
++  const float sin_beta = sqrtf(sin_beta2);
++  const float phii = atan2f(dot(wedge.nff, wi), dot(wedge.tff, wi));
++  const float phio = atan2f(dot(wedge.nff, wo), dot(wedge.tff, wo));
++
++  /* Distance parameters. */
++  const float Li = ro * sin_beta2;
++  const float Lrn = Li, Lro = Li;
++
++  /* Diffraction coefficients. */
++  const float a1 = wav_utd_a<+1>(phii - phio, n);
++  const float a2 = wav_utd_a<-1>(phii - phio, n);
++  const float a3 = wav_utd_a<+1>(phii + phio, n);
++  const float a4 = wav_utd_a<-1>(phii + phio, n);
++  const wav_complex F1 = wav_utd_f(k * Li * a1);
++  const wav_complex F2 = wav_utd_f(k * Li * a2);
++  const wav_complex F3 = wav_utd_f(k * Lrn * a3);
++  const wav_complex F4 = wav_utd_f(k * Lro * a4);
++  /* -cot((pi + (phii-phio)) / (2n)) * F1 */
++  const float c1 = -cosf((WAV_PI_F + (phii - phio)) / (2.0f * n)) /
++                   sinf((WAV_PI_F + (phii - phio)) / (2.0f * n));
++  const wav_complex D1v = wav_complex_mul_real(F1, c1);
++  const float c2 = -cosf((WAV_PI_F - (phii - phio)) / (2.0f * n)) /
++                   sinf((WAV_PI_F - (phii - phio)) / (2.0f * n));
++  const wav_complex D2 = wav_complex_mul_real(F2, c2);
++  const float c3 = -cosf((WAV_PI_F + (phii + phio)) / (2.0f * n)) /
++                   sinf((WAV_PI_F + (phii + phio)) / (2.0f * n));
++  const wav_complex D3 = wav_complex_mul_real(F3, c3);
++  const float c4 = -cosf((WAV_PI_F - (phii + phio)) / (2.0f * n)) /
++                   sinf((WAV_PI_F - (phii + phio)) / (2.0f * n));
++  const wav_complex D4 = wav_complex_mul_real(F4, c4);
++
++  const float kro = k * ro;
++  const float Ds = 1.0f / (2.0f * n * sqrtf(kro) * sin_beta) * WAV_INV_SQRT_TWO_PI_F;
++  /* D = Ds * exp(-i*pi/4); folded into the coefficients below. */
++
++  const float t1 = wav_mod(phii + phio, WAV_PI_2_F);
++  const float t2 = wav_mod(phii - phio, WAV_PI_2_F);
++  const bool degenerate = (fabsf(t1) < 1e-5f || fabsf(t2) < 1e-5f);
++  const wav_complex D1D2 = wav_complex_add(D1v, D2);
++  const wav_complex D3D4 = wav_complex_add(D3, D4);
++  const wav_complex Ds_sum = degenerate ? wav_make_complex(0.0f, 0.0f) :
++                                          wav_complex_sub(D1D2, D3D4);
++  const wav_complex Dh_sum = degenerate ? wav_make_complex(0.0f, 0.0f) :
++                                          wav_complex_add(D1D2, D3D4);
++
++  const wav_complex phase = wav_complex_exp(wav_make_complex(0.0f, -WAV_PI_4_F));
++  wav_utd_ret ret;
++  ret.Ds = wav_complex_mul(wav_complex_mul_real(Ds_sum, -Ds), phase);
++  ret.Dh = wav_complex_mul(wav_complex_mul_real(Dh_sum, -Ds), phase);
++  ret.si = ti;
++  ret.hi = bi;
++  ret.so = to;
++  ret.ho = bo;
++  return ret;
++}
++
++}  // namespace waveoptics
++
++CCL_NAMESPACE_END
+diff --git a/source/blender/blenkernel/BKE_node_legacy_types.hh b/source/blender/blenkernel/BKE_node_legacy_types.hh
+index 988406e3a7d..57826bc4929 100644
+--- a/source/blender/blenkernel/BKE_node_legacy_types.hh
++++ b/source/blender/blenkernel/BKE_node_legacy_types.hh
+@@ -59,6 +59,8 @@
+ #define SH_NODE_BSDF_GLASS 134
+ #define SH_NODE_BSDF_TRANSLUCENT 137
+ #define SH_NODE_BSDF_TRANSPARENT 138
++#define SH_NODE_BSDF_WAVE_DIFFRACTION 720
++#define SH_NODE_BSDF_WAVE_THIN_FILM 721
+ #define SH_NODE_BSDF_SHEEN 139
+ #define SH_NODE_EMISSION 140
+ #define SH_NODE_NEW_GEOMETRY 141
+diff --git a/source/blender/makesrna/intern/rna_nodetree.cc b/source/blender/makesrna/intern/rna_nodetree.cc
+index 0398e263756..0170692bc7b 100644
+--- a/source/blender/makesrna/intern/rna_nodetree.cc
++++ b/source/blender/makesrna/intern/rna_nodetree.cc
+@@ -10688,6 +10688,8 @@ static void rna_def_nodes(BlenderRNA *brna)
+   define("ShaderNode", "ShaderNodeBsdfToon", def_toon);
+   define("ShaderNode", "ShaderNodeBsdfTranslucent");
+   define("ShaderNode", "ShaderNodeBsdfTransparent");
++  define("ShaderNode", "ShaderNodeWaveDiffraction");
++  define("ShaderNode", "ShaderNodeWaveThinFilm");
+   define("ShaderNode", "ShaderNodeBump", def_sh_bump);
+   define("ShaderNode", "ShaderNodeCameraData");
+   define("ShaderNode", "ShaderNodeClamp", def_clamp);
+diff --git a/source/blender/nodes/shader/CMakeLists.txt b/source/blender/nodes/shader/CMakeLists.txt
+index 135b3ccae3e..858036747fc 100644
+--- a/source/blender/nodes/shader/CMakeLists.txt
++++ b/source/blender/nodes/shader/CMakeLists.txt
+@@ -38,6 +38,8 @@ set(SRC
+   nodes/node_shader_bsdf_toon.cc
+   nodes/node_shader_bsdf_translucent.cc
+   nodes/node_shader_bsdf_transparent.cc
++  nodes/node_shader_bsdf_wave_diffraction.cc
++  nodes/node_shader_bsdf_wave_thin_film.cc
+   nodes/node_shader_bump.cc
+   nodes/node_shader_camera.cc
+   nodes/node_shader_clamp.cc
+diff --git a/source/blender/nodes/shader/node_shader_register.cc b/source/blender/nodes/shader/node_shader_register.cc
+index a5a459f05d2..d838c8544ac 100644
+--- a/source/blender/nodes/shader/node_shader_register.cc
++++ b/source/blender/nodes/shader/node_shader_register.cc
+@@ -33,6 +33,8 @@ void register_shader_nodes()
+   register_node_type_sh_bsdf_toon();
+   register_node_type_sh_bsdf_translucent();
+   register_node_type_sh_bsdf_transparent();
++  register_node_type_sh_wave_diffraction();
++  register_node_type_sh_wave_thin_film();
+   register_node_type_sh_bsdf_sheen();
+   register_node_type_sh_bump();
+   register_node_type_sh_camera();
+diff --git a/source/blender/nodes/shader/node_shader_register.hh b/source/blender/nodes/shader/node_shader_register.hh
+index c131e3dc0f6..a0b4a23234c 100644
+--- a/source/blender/nodes/shader/node_shader_register.hh
++++ b/source/blender/nodes/shader/node_shader_register.hh
+@@ -29,6 +29,8 @@ void register_node_type_sh_bsdf_refraction();
+ void register_node_type_sh_bsdf_toon();
+ void register_node_type_sh_bsdf_translucent();
+ void register_node_type_sh_bsdf_transparent();
++void register_node_type_sh_wave_diffraction();
++void register_node_type_sh_wave_thin_film();
+ void register_node_type_sh_bsdf_sheen();
+ void register_node_type_sh_bump();
+ void register_node_type_sh_camera();
+diff --git a/source/blender/nodes/shader/nodes/node_shader_bsdf_wave_diffraction.cc b/source/blender/nodes/shader/nodes/node_shader_bsdf_wave_diffraction.cc
+new file mode 100644
+index 00000000000..6bc4e716133
+--- /dev/null
++++ b/source/blender/nodes/shader/nodes/node_shader_bsdf_wave_diffraction.cc
+@@ -0,0 +1,80 @@
++/* SPDX-FileCopyrightText: 2005 Blender Authors
++ *
++ * SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include "node_shader_util.hh"
++
++namespace blender {
++
++namespace nodes::node_shader_wave_diffraction_cc {
++
++static void node_declare(NodeDeclarationBuilder &b)
++{
++  b.add_input<decl::Color>("Color"_ustr).default_value({1.0f, 1.0f, 1.0f, 1.0f});
++  b.add_input<decl::Float>("Width"_ustr)
++      .default_value(0.0002f)
++      .min(0.0f)
++      .subtype(PROP_NONE)
++      .description("Slit width in metres");
++  b.add_input<decl::Float>("Height"_ustr).default_value(0.001f).min(0.0f);
++  b.add_input<decl::Float>("Wavelength"_ustr)
++      .default_value(550.0f)
++      .min(1.0f)
++      .max(2000.0f)
++      .subtype(PROP_WAVELENGTH)
++      .description("Wavelength in nanometres");
++  b.add_input<decl::Float>("Dispersion"_ustr)
++      .default_value(0.0f)
++      .min(0.0f)
++      .max(1.0f)
++      .subtype(PROP_FACTOR);
++  b.add_input<decl::Float>("Polarizer Angle"_ustr)
++      .default_value(0.0f)
++      .min(-1.0f)
++      .max(3.14f)
++      .description("Polarizer rotation in radians (-1 disables)");
++  b.add_input<decl::Float>("Polarized Input"_ustr).default_value(0.0f).min(0.0f).max(1.0f);
++  b.add_input<decl::Float>("Slit Separation"_ustr)
++      .default_value(0.0f)
++      .min(0.0f)
++      .description("Double-slit centre separation in metres (0 = single slit)");
++  b.add_input<decl::Vector>("Tangent"_ustr);
++  b.add_input<decl::Vector>("Normal"_ustr).hide_value();
++  b.add_output<decl::Shader>("BSDF"_ustr);
++}
++
++static void node_shader_init_wave_diffraction(bNodeTree * /*ntree*/, bNode * /*node*/)
++{
++}
++
++static int node_shader_gpu_bsdf_wave_diffraction(GPUMaterial * /*mat*/,
++                                                 bNode * /*node*/,
++                                                 bNodeExecData * /*execdata*/,
++                                                 GPUNodeStack * /*in*/,
++                                                 GPUNodeStack * /*out*/)
++{
++  return 0;
++}
++
++}  // namespace nodes::node_shader_wave_diffraction_cc
++
++void register_node_type_sh_wave_diffraction()
++{
++  namespace file_ns = nodes::node_shader_wave_diffraction_cc;
++
++  static bke::bNodeType ntype;
++
++  sh_node_type_base(&ntype, "ShaderNodeWaveDiffraction"_ustr, SH_NODE_BSDF_WAVE_DIFFRACTION);
++  ntype.ui_name = "Wave Diffraction";
++  ntype.ui_description = "Fraunhofer free-space diffraction of a slit aperture";
++  ntype.enum_name_legacy = "BSDF_WAVE_DIFFRACTION";
++  ntype.nclass = NODE_CLASS_SHADER;
++  ntype.add_ui_poll = object_shader_nodes_poll;
++  ntype.declare = file_ns::node_declare;
++  ntype.initfunc = file_ns::node_shader_init_wave_diffraction;
++  ntype.gpu_fn = file_ns::node_shader_gpu_bsdf_wave_diffraction;
++
++  bke::node_register_type(ntype);
++}
++
++}  // namespace blender
+diff --git a/source/blender/nodes/shader/nodes/node_shader_bsdf_wave_thin_film.cc b/source/blender/nodes/shader/nodes/node_shader_bsdf_wave_thin_film.cc
+new file mode 100644
+index 00000000000..31cbf53dc28
+--- /dev/null
++++ b/source/blender/nodes/shader/nodes/node_shader_bsdf_wave_thin_film.cc
+@@ -0,0 +1,61 @@
++/* SPDX-FileCopyrightText: 2005 Blender Authors
++ *
++ * SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include "node_shader_util.hh"
++
++namespace blender {
++
++namespace nodes::node_shader_wave_thin_film_cc {
++
++static void node_declare(NodeDeclarationBuilder &b)
++{
++  b.add_input<decl::Color>("Color"_ustr).default_value({1.0f, 1.0f, 1.0f, 1.0f});
++  b.add_input<decl::Float>("Ambient Index"_ustr).default_value(1.0f).min(1.0f).max(5.0f);
++  b.add_input<decl::Float>("Film Index"_ustr).default_value(1.5f).min(1.0f).max(5.0f);
++  b.add_input<decl::Float>("Substrate Index"_ustr).default_value(2.0f).min(1.0f).max(5.0f);
++  b.add_input<decl::Float>("Film Thickness (nm)"_ustr)
++      .default_value(100.0f)
++      .min(0.0f)
++      .max(10000.0f)
++      .subtype(PROP_WAVELENGTH)
++      .description("Film thickness in nanometers");
++  b.add_input<decl::Vector>("Normal"_ustr).hide_value();
++  b.add_output<decl::Shader>("BSDF"_ustr);
++}
++
++static void node_shader_init_wave_thin_film(bNodeTree * /*ntree*/, bNode * /*node*/)
++{
++}
++
++static int node_shader_gpu_bsdf_wave_thin_film(GPUMaterial * /*mat*/,
++                                               bNode * /*node*/,
++                                               bNodeExecData * /*execdata*/,
++                                               GPUNodeStack * /*in*/,
++                                               GPUNodeStack * /*out*/)
++{
++  return 0;
++}
++
++}  // namespace nodes::node_shader_wave_thin_film_cc
++
++void register_node_type_sh_wave_thin_film()
++{
++  namespace file_ns = nodes::node_shader_wave_thin_film_cc;
++
++  static bke::bNodeType ntype;
++
++  sh_node_type_base(&ntype, "ShaderNodeWaveThinFilm"_ustr, SH_NODE_BSDF_WAVE_THIN_FILM);
++  ntype.ui_name = "Wave Thin Film";
++  ntype.ui_description = "Single dielectric film interference (iridescence)";
++  ntype.enum_name_legacy = "BSDF_WAVE_THIN_FILM";
++  ntype.nclass = NODE_CLASS_SHADER;
++  ntype.add_ui_poll = object_shader_nodes_poll;
++  ntype.declare = file_ns::node_declare;
++  ntype.initfunc = file_ns::node_shader_init_wave_thin_film;
++  ntype.gpu_fn = file_ns::node_shader_gpu_bsdf_wave_thin_film;
++
++  bke::node_register_type(ntype);
++}
++
++}  // namespace blender
+-- 
+2.54.0 (Apple Git-156)
+
+
+From f18da99b75f028e69fe9b7dd27330afe217ee428 Mon Sep 17 00:00:00 2001
+From: Faputa <faputa@FaputadeMacBook-Air.local>
+Date: Tue, 1 Sep 2026 12:36:14 +0800
+Subject: [PATCH 2/2] Research Edition: wire feature flags, render_mode
+ behavior, wavelength sampling, polarization, panel status, denoise temporal
+
+---
+ intern/cycles/blender/addon/ui.py             | 19 +++++++++++++++
+ intern/cycles/blender/python.cpp              |  9 +++++++
+ intern/cycles/blender/sync.cpp                |  2 +-
+ .../kernel/closure/bsdf_wave_diffraction.h    | 22 +++++++++++++++--
+ intern/cycles/kernel/data_template.h          |  3 +++
+ intern/cycles/kernel/svm/closure.h            | 14 +++++++++--
+ intern/cycles/scene/CMakeLists.txt            |  1 +
+ intern/cycles/scene/integrator.cpp            | 15 ++++++++++++
+ intern/cycles/scene/research_features.cpp     | 24 +++++++++++++++++++
+ intern/cycles/scene/research_features.h       | 11 +++++++++
+ 10 files changed, 115 insertions(+), 5 deletions(-)
+
+diff --git a/intern/cycles/blender/addon/ui.py b/intern/cycles/blender/addon/ui.py
+index 66f06fb39d9..7bd33eb7328 100644
+--- a/intern/cycles/blender/addon/ui.py
++++ b/intern/cycles/blender/addon/ui.py
+@@ -630,6 +630,25 @@ class CYCLES_RENDER_PT_research(CyclesButtonsPanel, Panel):
+         col.prop(cscene, "research_mis_exponent")
+         col.prop(cscene, "research_svgf_temporal")
+ 
++        # Feature status summary (parsed from the feature id string).
++        features = set(cscene.research_features.split())
++        known = [
++            ("wave_diffraction", "Wave Diffraction", "slit diffraction BSDF"),
++            ("wave_thin_film", "Wave Thin Film", "thin-film interference BSDF"),
++            ("wavelength_sampling", "Wavelength Sampling", "multi-band spectral eval"),
++            ("polarization", "Polarization", "linear polarizer (Malus)"),
++            ("svgf", "SVGF", "temporal denoising"),
++        ]
++        box = layout.box()
++        box.label(text="Feature status")
++        for fid, label, desc in known:
++            row = box.row(align=True)
++            icon = 'CHECKBOX_HLT' if fid in features else 'CHECKBOX_DEHLT'
++            row.label(text=label, icon=icon)
++            row.label(text=desc, icon='BLANK1')
++            if fid not in features:
++                row.label(text="(off)", icon='BLANK1')
++
+ class CYCLES_RENDER_PT_light_paths_max_bounces(CyclesButtonsPanel, Panel):
+     bl_label = "Max Bounces"
+     bl_parent_id = "CYCLES_RENDER_PT_light_paths"
+diff --git a/intern/cycles/blender/python.cpp b/intern/cycles/blender/python.cpp
+index 3070e7ac78a..39d111c25b6 100644
+--- a/intern/cycles/blender/python.cpp
++++ b/intern/cycles/blender/python.cpp
+@@ -621,6 +621,15 @@ static PyObject *denoise_func(PyObject * /*self*/, PyObject *args, PyObject *key
+       *b_scene, b_view_layer, true, preferences_device);
+   params.use = true;
+ 
++  /* Research Edition svgf_temporal: when enabled, force the temporally
++   * stable (SVGF-style) denoising path even for single-frame input. */
++  blender::PointerRNA scene_rna = RNA_id_pointer_create(&b_scene->id);
++  blender::PointerRNA cscene = RNA_pointer_get(&scene_rna, "cycles");
++  if (RNA_struct_find_property(&cscene, "research_svgf_temporal")) {
++    params.temporally_stable = params.temporally_stable ||
++                               get_boolean(cscene, "research_svgf_temporal");
++  }
++
+   /* Parse file paths list. */
+   vector<string> input;
+   vector<string> output;
+diff --git a/intern/cycles/blender/sync.cpp b/intern/cycles/blender/sync.cpp
+index ce33ddcc954..17f49245c6d 100644
+--- a/intern/cycles/blender/sync.cpp
++++ b/intern/cycles/blender/sync.cpp
+@@ -368,7 +368,7 @@ void BlenderSync::sync_integrator(blender::ViewLayer &b_view_layer,
+   /* Research Edition: render mode, enabled research features, MIS exponent
+    * and SVGF temporal reprojection. */
+   const string render_mode = get_enum_identifier(cscene, "research_render_mode");
+-  integrator->set_render_mode((render_mode == "realtime") ? RenderMode::REALTIME :
++  integrator->set_render_mode((render_mode == "REALTIME") ? RenderMode::REALTIME :
+                                                              RenderMode::OFFLINE);
+   integrator->set_research_features(ustring(get_string(cscene, "research_features")));
+   integrator->set_mis_exponent(get_float(cscene, "research_mis_exponent"));
+diff --git a/intern/cycles/kernel/closure/bsdf_wave_diffraction.h b/intern/cycles/kernel/closure/bsdf_wave_diffraction.h
+index c520e680f18..0974f31bbe6 100644
+--- a/intern/cycles/kernel/closure/bsdf_wave_diffraction.h
++++ b/intern/cycles/kernel/closure/bsdf_wave_diffraction.h
+@@ -207,7 +207,9 @@ ccl_device_inline void bsdf_wave_diffraction_setup(ccl_private ShaderData *sd,
+     bsdf->width = fmaxf(width, 0.0f);
+     bsdf->height = fmaxf(height, 0.0f);
+     bsdf->wavelength = fmaxf(wavelength, 0.0f);
+-    bsdf->dispersion = dispersion > 0.0f ? 1.0f : 0.0f;
++    /* dispersion: 0 = mono, 1 = three-band, 2 = multi-band wavelength
++     * sampling (Research Edition wavelength_sampling feature). */
++    bsdf->dispersion = (dispersion >= 2.0f) ? 2.0f : (dispersion > 0.0f ? 1.0f : 0.0f);
+     bsdf->polarizer_angle = polarizer_angle;
+     bsdf->polarized_input = polarized_input > 0.0f ? 1.0f : 0.0f;
+     bsdf->slit_separation = fmaxf(slit_separation, 0.0f);
+@@ -313,7 +315,23 @@ ccl_device_inline Spectrum wave_diffraction_eval_spectrum(
+   const float pol = wave_polarizer_transmission(bsdf);
+ 
+   Spectrum result;
+-  if (bsdf->dispersion > 0.0f) {
++  if (bsdf->dispersion >= 2.0f) {
++    /* Research Edition wavelength_sampling: evaluate on a wider set of
++     * wavelengths for a smoother, closer-to-continuous spectrum than the
++     * three sRGB primaries. 7 bands across the visible range. */
++    const float wavelengths[7] = {450.0f, 480.0f, 510.0f, 540.0f,
++                                  570.0f, 600.0f, 630.0f};
++    float p[7];
++    for (int i = 0; i < 7; ++i) {
++      p[i] = wave_diffraction_eval_pdf_wavelength(bsdf, wi, wo, wavelengths[i]);
++    }
++    /* Map 7 spectral samples to RGB via a simple luminance split. */
++    *pdf = p[3]; /* mid band drives sampling */
++    result = make_float3(0.5f * (p[0] + p[1] + p[2]),
++                         0.5f * (p[2] + p[3] + p[4]),
++                         0.5f * (p[4] + p[5] + p[6]));
++  }
++  else if (bsdf->dispersion > 0.0f) {
+     float p[3];
+     float wavelengths[3];
+     wav_spectrum_three_band(wavelengths);
+diff --git a/intern/cycles/kernel/data_template.h b/intern/cycles/kernel/data_template.h
+index 046e92f93c5..21a036a1e83 100644
+--- a/intern/cycles/kernel/data_template.h
++++ b/intern/cycles/kernel/data_template.h
+@@ -180,6 +180,9 @@ KERNEL_STRUCT_MEMBER(integrator, float, light_inv_rr_threshold)
+ KERNEL_STRUCT_MEMBER(integrator, float, mis_exponent)
+ KERNEL_STRUCT_MEMBER(integrator, int, svgf_temporal)
+ KERNEL_STRUCT_MEMBER(integrator, int, render_mode)
++/* Research Edition: bitmask of enabled research features (see
++ * research_features.h). */
++KERNEL_STRUCT_MEMBER(integrator, int, research_flags)
+ /* Bounces. */
+ KERNEL_STRUCT_MEMBER(integrator, int, min_bounce)
+ KERNEL_STRUCT_MEMBER(integrator, int, max_bounce)
+diff --git a/intern/cycles/kernel/svm/closure.h b/intern/cycles/kernel/svm/closure.h
+index dff8529d620..fb7e237e2ad 100644
+--- a/intern/cycles/kernel/svm/closure.h
++++ b/intern/cycles/kernel/svm/closure.h
+@@ -506,14 +506,24 @@ ccl_device
+       const float polarizer_angle = stack_load(stack, bsdf_data.polarizer_angle);
+       const float polarized_input = stack_load(stack, bsdf_data.polarized_input);
+       const float slit_separation = stack_load(stack, bsdf_data.slit_separation);
++      /* Research Edition wavelength_sampling: upgrade three-band dispersion
++       * to multi-band wavelength sampling (2) when the feature is enabled
++       * and the node requests dispersion. Polarization: the linear
++       * polarizer (Malus's law) is only active when the polarization
++       * feature is enabled (bit 4). */
++      const int research_flags = kernel_data.integrator.research_flags;
++      const float eff_dispersion =
++          ((research_flags & 2) && dispersion > 0.0f) ? 2.0f : dispersion;
++      const float eff_polarizer_angle =
++          (research_flags & 4) ? polarizer_angle : -1.0f;
+       bsdf_wave_diffraction_setup(sd,
+                                   N,
+                                   T,
+                                   width,
+                                   height,
+                                   wavelength,
+-                                  dispersion,
+-                                  polarizer_angle,
++                                  eff_dispersion,
++                                  eff_polarizer_angle,
+                                   polarized_input,
+                                   slit_separation,
+                                   weight);
+diff --git a/intern/cycles/scene/CMakeLists.txt b/intern/cycles/scene/CMakeLists.txt
+index a4377db5c17..743a90e8102 100644
+--- a/intern/cycles/scene/CMakeLists.txt
++++ b/intern/cycles/scene/CMakeLists.txt
+@@ -31,6 +31,7 @@ set(SRC
+   image_sky.cpp
+   image_vdb.cpp
+   integrator.cpp
++  research_features.cpp
+   scene_attributes.cpp
+   light.cpp
+   light_tree.cpp
+diff --git a/intern/cycles/scene/integrator.cpp b/intern/cycles/scene/integrator.cpp
+index cfb6c317833..93d0545cf6f 100644
+--- a/intern/cycles/scene/integrator.cpp
++++ b/intern/cycles/scene/integrator.cpp
+@@ -9,6 +9,7 @@
+ #include "scene/camera.h"
+ #include "scene/film.h"
+ #include "scene/integrator.h"
++#include "scene/research_features.h"
+ #include "scene/light.h"
+ #include "scene/object.h"
+ #include "scene/scene.h"
+@@ -231,11 +232,25 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
+   kintegrator->mis_exponent = (mis_exponent >= 1.0f) ? mis_exponent : 2.0f;
+   kintegrator->svgf_temporal = svgf_temporal;
+   kintegrator->render_mode = (int)render_mode;
++  kintegrator->research_flags = research_features_to_flags(string(research_features));
++
++  /* Research Edition: REALTIME mode caps path depth for interactive
++   * latency; the cap applies on top of the user's bounce settings. */
++  const int realtime_max_bounce = 4;
++  const int realtime_max_diffuse = 2;
++  const int realtime_max_glossy = 3;
+ 
+   /* Plus one so that a bounce of 0 indicates no global illumination, only direct illumination. */
+   kintegrator->min_bounce = min_bounce + 1;
+   kintegrator->max_bounce = max_bounce + 1;
+ 
++  if (render_mode == RenderMode::REALTIME) {
++    kintegrator->max_bounce = min(kintegrator->max_bounce, realtime_max_bounce + 1);
++    kintegrator->max_diffuse_bounce = min(kintegrator->max_diffuse_bounce,
++                                          realtime_max_diffuse + 1);
++    kintegrator->max_glossy_bounce = min(kintegrator->max_glossy_bounce,
++                                         realtime_max_glossy + 1);
++  }
+   kintegrator->max_diffuse_bounce = max_diffuse_bounce + 1;
+   kintegrator->max_glossy_bounce = max_glossy_bounce + 1;
+   kintegrator->max_transmission_bounce = max_transmission_bounce + 1;
+diff --git a/intern/cycles/scene/research_features.cpp b/intern/cycles/scene/research_features.cpp
+index aab4acd8928..f308846c370 100644
+--- a/intern/cycles/scene/research_features.cpp
++++ b/intern/cycles/scene/research_features.cpp
+@@ -8,6 +8,7 @@
+  * clearly instead of silently picking one. */
+ 
+ #include "scene/research_features.h"
++#include <sstream>
+ 
+ CCL_NAMESPACE_BEGIN
+ 
+@@ -124,4 +125,27 @@ bool research_validate_features(const vector<string> &enabled, string *error)
+   return true;
+ }
+ 
++
++uint research_features_to_flags(const string &features)
++{
++  uint flags = 0;
++  std::istringstream iss(features);
++  string id;
++  while (iss >> id) {
++    if (id == "wave_diffraction") {
++      flags |= RESEARCH_FEATURE_WAVE_DIFFRACTION;
++    }
++    else if (id == "wavelength_sampling") {
++      flags |= RESEARCH_FEATURE_WAVELENGTH_SAMPLING;
++    }
++    else if (id == "polarization") {
++      flags |= RESEARCH_FEATURE_POLARIZATION;
++    }
++    else if (id == "svgf") {
++      flags |= RESEARCH_FEATURE_SVGF;
++    }
++  }
++  return flags;
++}
++
+ CCL_NAMESPACE_END
+diff --git a/intern/cycles/scene/research_features.h b/intern/cycles/scene/research_features.h
+index 4cf1e7a5a4b..dbb54ca55f8 100644
+--- a/intern/cycles/scene/research_features.h
++++ b/intern/cycles/scene/research_features.h
+@@ -35,6 +35,17 @@ static constexpr uint render_mode_bit(RenderMode mode)
+   return 1u << (uint)mode;
+ }
+ 
++/* Kernel flag bits for enabled research features (mirrors feature ids in
++ * the research_features string; consumed by kernel_data.integrator.research_flags). */
++static constexpr uint RESEARCH_FEATURE_WAVE_DIFFRACTION = 1u << 0;
++static constexpr uint RESEARCH_FEATURE_WAVELENGTH_SAMPLING = 1u << 1;
++static constexpr uint RESEARCH_FEATURE_POLARIZATION = 1u << 2;
++static constexpr uint RESEARCH_FEATURE_SVGF = 1u << 3;
++
++/* Parse a space-separated feature id list into a kernel flag bitmask.
++ * Unknown ids are ignored (validation happens in research_validate_features). */
++uint research_features_to_flags(const string &features);
++
+ /* Look up feature info by id; nullptr when unknown. */
+ const ResearchFeatureInfo *research_feature_find(const string &id);
+ 
+-- 
+2.54.0 (Apple Git-156)
+
